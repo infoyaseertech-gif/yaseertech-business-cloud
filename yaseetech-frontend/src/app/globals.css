@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: #fbf9f4;
+  color: #1c1b19;
+}
+
+/* Visible keyboard focus everywhere, per the frontend design skill's quality
+   floor -- never rely on the browser default alone, but never remove it
+   without replacing it. */
+:focus-visible {
+  outline: 2px solid #c98a2c;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* --- The signature element: a perforated ledger/receipt-tape edge. ---
+   Used on the auth hero panel and on tabular data (the team list) to tie
+   the interface's look directly to what the product does: bookkeeping and
+   POS receipts. Built with a radial-gradient repeat rather than an SVG or
+   image asset, so it scales cleanly at any height. */
+.ledger-tape-edge {
+  position: relative;
+}
+.ledger-tape-edge::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -1px;
+  bottom: 0;
+  width: 16px;
+  background-image: radial-gradient(
+    circle at 8px 12px,
+    #fbf9f4 5px,
+    transparent 5.5px
+  );
+  background-size: 16px 24px;
+  background-repeat: repeat-y;
+}
+
+.ledger-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px dashed #d8d2c4;
+}
+.ledger-row:last-child {
+  border-bottom: none;
+}

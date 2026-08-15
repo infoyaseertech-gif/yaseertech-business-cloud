@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>YaseeTech Business Cloud — Design Preview</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,500;0,600;0,700;0,900;1,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          paper: '#FBF9F4',
+          ink: '#1C1B19',
+          'ink-soft': '#5B5850',
+          indigo: { DEFAULT: '#1E2A52', 600: '#28386B', 500: '#35447A', 100: '#E4E7F0' },
+          gold: { DEFAULT: '#C98A2C', 600: '#B37821', 100: '#F4E3C2' },
+          success: '#3F7D58',
+          danger: '#B0463A',
+          border: '#D8D2C4',
+        },
+        fontFamily: {
+          display: ['Fraunces', 'serif'],
+          sans: ['"IBM Plex Sans"', 'sans-serif'],
+          mono: ['"IBM Plex Mono"', 'monospace'],
+        },
+      },
+    },
+  };
+</script>
+<style>
+  body { background-color: #FBF9F4; color: #1C1B19; }
+  .ledger-tape-edge { position: relative; }
+  .ledger-tape-edge::after {
+    content: '';
+    position: absolute;
+    top: 0; right: -1px; bottom: 0; width: 16px;
+    background-image: radial-gradient(circle at 8px 12px, #FBF9F4 5px, transparent 5.5px);
+    background-size: 16px 24px;
+    background-repeat: repeat-y;
+  }
+  .ledger-row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: 0.85rem 0; border-bottom: 1px dashed #D8D2C4; }
+  .ledger-row:last-child { border-bottom: none; }
+  :focus-visible { outline: 2px solid #C98A2C; outline-offset: 2px; }
+</style>
+</head>
+<body class="font-sans">
+
+<div class="min-h-screen bg-paper flex items-stretch justify-center p-4 sm:p-8">
+  <div class="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 rounded-2xl overflow-hidden shadow-sm border border-border">
+
+    <!-- Ledger tape hero (the signature element) -->
+    <div class="hidden md:block ledger-tape-edge rounded-l-2xl bg-indigo px-8 py-10 text-paper h-full flex flex-col">
+      <div>
+        <p class="font-mono text-xs uppercase tracking-[0.2em] text-gold-100/70">Today's ledger</p>
+        <h1 class="mt-3 font-display text-3xl font-semibold italic text-paper">Every sale,<br />every naira, tracked.</h1>
+      </div>
+
+      <div class="mt-10 flex-1 space-y-0">
+        <div class="flex items-baseline justify-between border-b border-dashed border-white/15 py-3 text-sm">
+          <span class="text-paper/80">Rice, 50kg bag</span>
+          <span class="font-mono text-gold-100">+₦48,000</span>
+        </div>
+        <div class="flex items-baseline justify-between border-b border-dashed border-white/15 py-3 text-sm">
+          <span class="text-paper/80">Vegetable Oil, 5L</span>
+          <span class="font-mono text-gold-100">+₦8,500</span>
+        </div>
+        <div class="flex items-baseline justify-between border-b border-dashed border-white/15 py-3 text-sm">
+          <span class="text-paper/80">Stock: rice, 50kg</span>
+          <span class="font-mono text-paper/50">−48 units</span>
+        </div>
+        <div class="flex items-baseline justify-between border-b border-dashed border-white/15 py-3 text-sm">
+          <span class="text-paper/80">Invoice INV-0142 paid</span>
+          <span class="font-mono text-gold-100">+₦120,000</span>
+        </div>
+        <div class="flex items-baseline justify-between border-b border-dashed border-white/15 py-3 text-sm">
+          <span class="text-paper/80">Supplier restock</span>
+          <span class="font-mono text-paper/50">−₦210,000</span>
+        </div>
+        <div class="flex items-baseline justify-between border-b border-dashed border-white/15 py-3 text-sm">
+          <span class="text-paper/80">Budget Android Phone</span>
+          <span class="font-mono text-gold-100">+₦79,000</span>
+        </div>
+      </div>
+
+      <p class="mt-8 text-xs text-paper/50">YaseeTech Business Cloud — POS, inventory, invoicing and bookkeeping built for Nigerian SMEs.</p>
+    </div>
+
+    <!-- Login form -->
+    <div class="bg-white px-8 py-10 sm:px-12 flex flex-col justify-center">
+      <h2 class="font-display text-2xl font-semibold text-ink">Welcome back</h2>
+      <p class="mt-1.5 text-sm text-ink-soft">Log in to your business dashboard.</p>
+
+      <form class="mt-8 space-y-5" onsubmit="return false;">
+        <div>
+          <label for="email" class="block text-sm font-medium text-ink mb-1.5">Email</label>
+          <input id="email" type="email" placeholder="you@business.com" class="w-full rounded-lg border border-border bg-white px-3.5 py-2.5 text-ink placeholder:text-ink-soft/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold focus:border-indigo-500 transition-colors" />
+        </div>
+        <div>
+          <label for="password" class="block text-sm font-medium text-ink mb-1.5">Password</label>
+          <input id="password" type="password" placeholder="••••••••" class="w-full rounded-lg border border-border bg-white px-3.5 py-2.5 text-ink placeholder:text-ink-soft/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold focus:border-indigo-500 transition-colors" />
+        </div>
+        <button type="submit" class="w-full rounded-lg bg-indigo px-4 py-2.5 font-medium text-paper transition-colors hover:bg-indigo-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold">
+          Log in
+        </button>
+      </form>
+
+      <p class="mt-6 text-sm text-ink-soft">
+        New to YaseeTech?
+        <a href="#" class="font-medium text-indigo underline underline-offset-2">Register your business</a>
+      </p>
+
+      <div class="mt-10 rounded-lg border border-dashed border-border bg-gold-100/20 px-4 py-3">
+        <p class="text-xs text-ink-soft">
+          <strong class="text-ink">This is a static design preview</strong> — it opens directly in your browser to show the real visual design, but the form doesn't actually do anything here. The real, working version is the Next.js app in the code you already have — see its README to run it with real login/data.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Dashboard preview -->
+<div class="min-h-screen bg-paper flex mt-4">
+  <aside class="w-64 shrink-0 bg-indigo text-paper flex flex-col">
+    <div class="px-6 py-6 border-b border-white/10">
+      <p class="font-display text-lg font-semibold italic">YaseeTech</p>
+      <p class="font-mono text-xs text-paper/50 mt-0.5">Business Cloud</p>
+    </div>
+    <nav class="flex-1 px-3 py-5 space-y-0.5">
+      <div class="rounded-lg px-3 py-2 text-sm bg-white/10 text-paper font-medium">Overview</div>
+      <div class="rounded-lg px-3 py-2 text-sm text-paper/70">Point of Sale</div>
+      <div class="rounded-lg px-3 py-2 text-sm text-paper/70">Inventory</div>
+      <div class="rounded-lg px-3 py-2 text-sm text-paper/70">Invoices</div>
+      <div class="rounded-lg px-3 py-2 text-sm text-paper/70">Team</div>
+      <p class="px-3 pt-5 pb-1 font-mono text-[10px] uppercase tracking-wider text-paper/35">Coming soon</p>
+      <div class="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-paper/35">
+        <span>Accounting reports</span><span class="font-mono text-[10px]">Phase 6</span>
+      </div>
+    </nav>
+    <div class="px-6 py-5 border-t border-white/10">
+      <p class="text-sm font-medium">Amaka Chukwu</p>
+      <p class="text-xs text-paper/50">amaka@example.com</p>
+      <p class="mt-3 text-sm text-gold-100 underline underline-offset-2">Log out</p>
+    </div>
+  </aside>
+
+  <main class="flex-1 px-8 py-8 sm:px-12">
+    <p class="font-mono text-xs uppercase tracking-[0.2em] text-gold-600">Overview</p>
+    <h1 class="mt-2 font-display text-3xl font-semibold text-ink">Welcome, Amaka</h1>
+    <p class="mt-1.5 text-sm text-ink-soft">This is your account, fetched from your own tenant only.</p>
+
+    <div class="mt-8 max-w-xl rounded-2xl border border-border bg-white px-6 py-2">
+      <div class="ledger-row"><span class="font-mono text-xs text-ink-soft">Full name</span><span class="font-medium text-ink">Amaka Chukwu</span></div>
+      <div class="ledger-row"><span class="font-mono text-xs text-ink-soft">Email</span><span class="text-ink">amaka@example.com</span></div>
+      <div class="ledger-row"><span class="font-mono text-xs text-ink-soft">Status</span><span class="inline-flex items-center rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">active</span></div>
+      <div class="ledger-row"><span class="font-mono text-xs text-ink-soft">Role(s)</span><span class="text-ink">Business Owner</span></div>
+    </div>
+  </main>
+</div>
+
+</body>
+</html>
