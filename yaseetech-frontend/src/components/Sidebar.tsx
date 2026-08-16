@@ -9,13 +9,10 @@ const AVAILABLE_NAV = [
   { href: '/dashboard/pos', label: 'Point of Sale' },
   { href: '/dashboard/inventory', label: 'Inventory' },
   { href: '/dashboard/invoices', label: 'Invoices' },
+  { href: '/dashboard/accounting', label: 'Accounting' },
+  { href: '/dashboard/branches', label: 'Branches' },
   { href: '/dashboard/team', label: 'Team' },
 ];
-
-// Named and shown, not hidden -- so it's honest about product scope rather
-// than implying a full app that isn't built yet. Each is tied to the phase
-// that will implement it, matching the master build plan.
-const COMING_SOON_NAV = [{ label: 'Accounting reports', phase: 'Phase 6' }];
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -43,20 +40,6 @@ export function Sidebar() {
             </Link>
           );
         })}
-
-        <p className="px-3 pt-5 pb-1 font-mono text-[10px] uppercase tracking-wider text-paper/35">
-          Coming soon
-        </p>
-        {COMING_SOON_NAV.map((item) => (
-          <div
-            key={item.label}
-            className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-paper/35 cursor-not-allowed"
-            title={`Planned for ${item.phase}`}
-          >
-            <span>{item.label}</span>
-            <span className="font-mono text-[10px]">{item.phase}</span>
-          </div>
-        ))}
       </nav>
 
       <div className="px-6 py-5 border-t border-white/10">

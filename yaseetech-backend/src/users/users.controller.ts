@@ -1,10 +1,11 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequestUser } from '../common/guards/request-user.interface';
 import { UsersService } from './users.service';
+import { CreateTeamMemberDto } from './dto/create-team-member.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -31,6 +32,16 @@ export class UsersController {
   @RequirePermissions('users.manage')
   list(@CurrentUser() user: RequestUser) {
     return this.usersService.listTenantUsers(user);
+  }
+
+  // Adds a teammate to the caller's own tenant with an assigned role and
+  // (for branch-scoped roles) a branch. Also requires users.manage --
+  // same permission that gates viewing the team list.
+  @Post()
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('users.manage')
+  createTeamMember(@CurrentUser() user: RequestUser, @Body() dto: CreateTeamMemberDto) {
+    return this.usersService.createTeamMember(user, dto);
   }
 }
 

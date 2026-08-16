@@ -127,3 +127,52 @@ export interface InvoiceDetail extends InvoiceListItem {
   items: { description: string; quantity: string; unit_price_ngn: string; line_total_ngn: string }[];
   payments: { amount_ngn: string; paid_at: string; method: string | null; reference: string | null }[];
 }
+
+export interface ProfitAndLoss {
+  period: { startDate: string; endDate: string };
+  revenue: { code: string; name: string; amount: number }[];
+  totalRevenue: number;
+  expenses: { code: string; name: string; amount: number }[];
+  totalExpenses: number;
+  netIncome: number;
+}
+
+export interface BalanceSheet {
+  asOfDate: string;
+  assets: { code: string; name: string; balance: number }[];
+  totalAssets: number;
+  liabilities: { code: string; name: string; balance: number }[];
+  totalLiabilities: number;
+  equity: { code: string; name: string; balance: number }[];
+  totalEquity: number;
+  isBalanced: boolean;
+}
+
+export interface CashFlow {
+  period: { startDate: string; endDate: string };
+  byCategory: { category: string; cashIn: number; cashOut: number; net: number }[];
+  totalCashIn: number;
+  totalCashOut: number;
+  netCashMovement: number;
+}
+
+export interface JournalEntry {
+  id: string;
+  entry_date: string;
+  description: string;
+  source_type: string;
+  is_reversal: boolean;
+  lines: { account: string; debit: string; credit: string }[];
+}
+
+export interface TeamMemberWithRole {
+  id: string;
+  email: string;
+  full_name: string;
+  status: string;
+  created_at: string;
+  role_name: string | null;
+  branch_id: string | null;
+}
+
+export type AssignableRole = 'Branch Manager' | 'Accountant' | 'Cashier' | 'Staff';

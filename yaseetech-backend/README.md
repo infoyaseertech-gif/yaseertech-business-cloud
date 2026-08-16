@@ -177,6 +177,50 @@ curl -X POST http://localhost:3000/api/v1/invoices/<invoiceId>/payments \
   -d '{"amountNgn": 50000, "method": "transfer"}'
 ```
 
+**Accounting reports (Phase 6):**
+```bash
+# Profit & Loss for this month so far
+curl -H "Authorization: Bearer <accessToken>" \
+  "http://localhost:3000/api/v1/accounting/profit-and-loss?startDate=2026-08-01&endDate=2026-08-31"
+
+# Balance Sheet as of today -- check isBalanced is true
+curl -H "Authorization: Bearer <accessToken>" \
+  "http://localhost:3000/api/v1/accounting/balance-sheet?asOfDate=2026-08-31"
+
+# The raw journal -- every entry POS/Invoicing has posted, audit-trail style
+curl -H "Authorization: Bearer <accessToken>" \
+  "http://localhost:3000/api/v1/accounting/journal?limit=20"
+```
+
+**Accounting reports (Phase 6)** — these read what POS/Invoicing already posted, so run them after doing a sale or two above:
+```bash
+curl -H "Authorization: Bearer <accessToken>" \
+  "http://localhost:3000/api/v1/accounting/profit-and-loss?startDate=2026-01-01&endDate=2026-12-31"
+
+curl -H "Authorization: Bearer <accessToken>" \
+  "http://localhost:3000/api/v1/accounting/balance-sheet"
+# check "isBalanced": true in the response -- that's the real correctness proof
+```
+
+**Multi-branch and team (Phase 5):**
+```bash
+# Add a second branch
+curl -X POST http://localhost:3000/api/v1/branches \
+  -H "Authorization: Bearer <accessToken>" -H "Content-Type: application/json" \
+  -d '{"name": "Second Branch", "address": "Somewhere else"}'
+
+# Add a Cashier, scoped to the main branch (use a real branchId from GET /branches)
+curl -X POST http://localhost:3000/api/v1/users \
+  -H "Authorization: Bearer <accessToken>" -H "Content-Type: application/json" \
+  -d '{"fullName":"Test Cashier","email":"cashier@example.com","password":"a-strong-password","role":"Cashier","branchId":"<branchId>"}'
+
+# Log in as that cashier, then confirm they CANNOT list the team (should be 403)
+curl -X POST http://localhost:3000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"cashier@example.com","password":"a-strong-password"}'
+curl -H "Authorization: Bearer <cashierAccessToken>" http://localhost:3000/api/v1/users
+```
+
 ## 8. Run the tenant-isolation regression test
 
 ```bash
@@ -220,6 +264,32 @@ until it passes again.
   payment** posts the cash/AR relief entry (Dr Cash / Cr Accounts
   Receivable) and recomputes status from the real sum of payments, not a
   trusted running counter.
+- `GET /branches`, `POST /branches` — list and create branches;
+  creating one requires `branches.manage_all` (Business Owner only —
+  `branches.manage_own`, held by Branch Manager, scopes someone to
+  operating an existing branch, not creating new ones).
+- `GET /users`, `POST /users` — team management. `POST /users` adds a
+  teammate to your own tenant with an assigned role (`Branch Manager`,
+  `Accountant`, `Cashier`, or `Staff` — never `Business Owner`, which is
+  only ever created at registration) and, for branch-scoped roles, a
+  required branch. There's no email/SMS invite system yet (Phase 8
+  infrastructure) — the Business Owner sets the new teammate's password
+  directly and shares it out of band.
+- `GET /accounting/profit-and-loss?startDate=&endDate=` — revenue minus
+  expenses for a period, read directly from `journal_entry_lines`.
+- `GET /accounting/balance-sheet?asOfDate=` — assets, liabilities, and
+  equity as of a date, with cumulative net income folded into a
+  "Retained Earnings" line since there's no period-closing process yet.
+  Returns `isBalanced: true/false` as a live sanity check — should always
+  be `true` given the database's double-entry trigger; if it's ever
+  `false`, that's a real bug worth reporting immediately.
+- `GET /accounting/cash-flow?startDate=&endDate=` — cash movement by
+  source (POS sales, invoice payments, manual entries) — a simplified
+  cash-movement report, not a full GAAP indirect-method statement.
+- `GET /accounting/journal?startDate=&endDate=&limit=` — the raw audit
+  trail: every journal entry and its lines, most recent first.
+- `GET /accounting/chart-of-accounts` — every account with its current
+  balance.
 - `GET /health` — checks the database connection
 - **Row-Level Security enforced from application code**: `DatabaseService.withTenantContext()`
   sets `app.current_tenant_id` per-transaction from the verified JWT —
@@ -233,23 +303,28 @@ until it passes again.
 - **CORS enabled** (`FRONTEND_URL` env var) so the separate Next.js
   frontend can call this API.
 
-## What's explicitly NOT in this phase (by design)
+## What's explicitly NOT in this project yet (by design)
 
-- Invoicing and Accounting *reports* (the sale-side journal entry posts
-  automatically, but P&L/Balance Sheet/Cash Flow views are Phase 6) —
-  Phase 4b/6.
+- **Subscription billing (Flutterwave).** The one real gap left from the
+  original v1 module list. Needs a real Flutterwave account and sandbox
+  keys before it can be built and tested properly — external setup, not
+  something buildable blind.
+- **Email/SMS invite system.** `POST /users` (Phase 5) adds a teammate
+  directly with a password the Business Owner sets and shares out of
+  band — there's no invite-link-with-expiry flow, because there's no
+  notification infrastructure yet (Phase 8).
 - Redis-backed rate limiting — the Phase 1 design calls for Redis at the
-  API-gateway layer; this phase runs standalone with no gateway or Redis
-  yet, so rate limiting is deliberately deferred rather than half-built.
-- Invite-a-teammate / assign-a-role-to-an-existing-user flow — registration
-  only creates the founding Business Owner right now. `test/tenant-isolation.e2e-spec.ts`
-  has a note marking exactly where a Cashier-permission test should be
-  added once this exists.
+  API-gateway layer; this project runs standalone with no gateway or
+  Redis yet, so rate limiting is deliberately deferred rather than
+  half-built.
 - Offline sync itself (the mobile POS client) — the backend's schema and
   idempotency design (`client_transaction_uuid`) are already built for it;
   the actual offline-capable client is a separate, later build.
 - 2FA / SSO — the `users` table already has the columns reserved
   (Phase 1, Section 4.3), but nothing reads or writes them yet.
+- Editing an existing team member's role, or reassigning them to a
+  different branch, after they're created — `POST /users` only covers
+  creation right now.
 
 ## Known simplifications in the POS/accounting integration, stated plainly
 
@@ -291,6 +366,29 @@ up automatically.
   background jobs exist.
 - **Invoice numbers are time-based, not a gapless sequence**, same
   reasoning and same caveat as POS receipt numbers.
+
+## Known simplifications in accounting reports (Phase 6), stated plainly
+
+- **Cash Flow is a cash-movement report, not a full GAAP Statement of Cash
+  Flows.** It shows what moved through the Cash account grouped by source
+  (POS sales, invoice payments, manual entries) — not the indirect-method
+  reconciliation of net income to cash via working-capital adjustments
+  that a formal cash flow statement does. That's meaningfully more complex
+  and isn't what an SME owner asking "where did my cash go" actually needs.
+- **No period-closing process.** There's no year-end journal entry that
+  zeroes out revenue/expense accounts into a permanent equity balance.
+  Instead, the Balance Sheet folds cumulative net-income-since-inception
+  directly into a "Retained Earnings (cumulative)" line on every request.
+  This keeps the balance sheet mathematically balanced (guaranteed by the
+  database's double-entry trigger) without a closing-entry feature v1
+  doesn't have — a real close-the-books process is reasonable v2 scope
+  once there's a fiscal year concept to close against.
+- **Report query parameters aren't validated with DTOs** the way write
+  endpoints are — `startDate`/`endDate`/`asOfDate` are taken as plain
+  query strings, matching the pattern already used for `branchId` filters
+  elsewhere. A malformed date will produce a Postgres error, not a clean
+  `VALIDATION_ERROR` — worth tightening if these become user-facing forms
+  rather than internal report tools.
 
 ## A known rough edge, stated plainly
 

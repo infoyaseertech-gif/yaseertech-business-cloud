@@ -74,7 +74,16 @@ Open **http://localhost:3001**. You should land on `/login`.
 6. Go to **Invoices**, click **+ New invoice**, add a customer by name
    inline, add a line item, and save as a draft. Open it, click
    **Send invoice**, then record a payment — the status badge should move
-   from Draft → Sent → Paid, matching what the backend actually computed.
+   from Draft → Sent → Paid.
+7. Go to **Accounting**, check the **Profit & Loss** tab shows the sale
+   and invoice revenue you just created, and the **Balance Sheet** tab
+   does NOT show the red "doesn't balance" warning — if it ever does,
+   that's a real bug worth reporting, not something to dismiss.
+8. Go to **Branches**, add a second branch. Go to **Team**, add a team
+   member with the **Cashier** role scoped to that new branch, using the
+   password you set. Log out, log back in as that Cashier, and confirm
+   the sidebar's **Team** page shows the "you don't have access" state —
+   not an error, a deliberate RBAC block.
 
 **Before step 6 will work, make sure the backend has run migration 016**
 (`016_accountant_permissions_and_ar_backfill.sql`) — it's what backfills
@@ -116,14 +125,28 @@ Mono** (amounts, emails, dates — anything tabular/data-like).
   send a draft (posting the real accrual journal entry) and record
   payments against it, with status badges reflecting the backend's actual
   computed state, including derived "Overdue"
+- `/dashboard/accounting` — Profit & Loss, Balance Sheet, Cash Flow, and
+  the raw Journal, all real reports read from the same journal entries POS
+  and Invoicing have been posting. The Balance Sheet visibly flags if
+  Assets ever stop equaling Liabilities + Equity, which should never
+  happen — it's a live check on the backend's double-entry guarantee, not
+  a decorative number.
 - `/dashboard/team` — `GET /users`, gated by the `users.manage` RBAC
   permission, with a genuine "you don't have access" state (not just a
-  generic error) if that permission is missing
+  generic error) if that permission is missing. Also has a real
+  "+ Add team member" form: name, email, a password you set directly
+  (no email-invite system yet), a role (Branch Manager / Accountant /
+  Cashier / Staff — never Business Owner), and a branch for roles that
+  need one.
+- `/dashboard/branches` — list branches, add new ones. Creating a branch
+  needs `branches.manage_all` (Business Owner only); a Branch Manager
+  hitting the form gets a real 403 from the backend, not a client-side
+  guess at what they're allowed to do.
 - Automatic access-token refresh on expiry, using the backend's rotating
   refresh tokens, with request queuing so two simultaneous 401s don't race
   each other into a double-refresh
-- A sidebar that's honest about scope: only Accounting reports remain
-  "coming soon" now, labeled with the phase that will build it
+- The sidebar has no "coming soon" section anymore — every core v1
+  module (POS, Inventory, Invoices, Accounting, Branches, Team) is real
 
 ## A known rough edge, stated plainly
 

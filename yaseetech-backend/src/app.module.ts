@@ -11,6 +11,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { PosModule } from './pos/pos.module';
 import { CustomersModule } from './customers/customers.module';
 import { InvoicesModule } from './invoices/invoices.module';
+import { AccountingModule } from './accounting/accounting.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -30,6 +31,7 @@ import { validateEnv } from './config/env.validation';
     PosModule,
     CustomersModule,
     InvoicesModule,
+    AccountingModule,
   ],
 })
 export class AppModule {}

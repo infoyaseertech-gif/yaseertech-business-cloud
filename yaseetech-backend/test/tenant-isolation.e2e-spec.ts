@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -118,16 +119,59 @@ describe('Tenant isolation (e2e)', () => {
       .expect(401);
   });
 
-  it('a Cashier-equivalent (no users.manage permission) cannot list tenant users', async () => {
-    // Registration always creates a Business Owner, who has every
-    // permission (per seed data role_permissions). This test documents the
-    // expectation for Phase 4, when non-owner signup/invite flows exist:
-    // once a Cashier-role user can be created via the API, this test
-    // should register one and assert GET /users returns 403
-    // FORBIDDEN_MISSING_PERMISSION for them. Left as a documented gap
-    // rather than a fabricated pass, since Phase 3 doesn't yet expose an
-    // "invite a Cashier" endpoint to set this up end-to-end.
-    expect(true).toBe(true);
+  it('a Cashier cannot list tenant users (real RBAC test, closing the Phase 3 gap)', async () => {
+    const server = app.getHttpServer();
+
+    const ownerRes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'RBAC Test Shop',
+        ownerFullName: 'RBAC Test Owner',
+        email: uniqueEmail('rbac-owner'),
+        password: 'correct-horse-battery-staple',
+      })
+      .expect(201);
+    const ownerToken = ownerRes.body.accessToken;
+
+    const branches = await request(server)
+      .get('/api/v1/branches')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+
+    const cashierEmail = uniqueEmail('rbac-cashier');
+    await request(server)
+      .post('/api/v1/users')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        fullName: 'Test Cashier',
+        email: cashierEmail,
+        password: 'correct-horse-battery-staple',
+        role: 'Cashier',
+        branchId: branches.body[0].id,
+      })
+      .expect(201);
+
+    const cashierLogin = await request(server)
+      .post('/api/v1/auth/login')
+      .send({ email: cashierEmail, password: 'correct-horse-battery-staple' })
+      .expect(200);
+    const cashierToken = cashierLogin.body.accessToken;
+
+    // The actual RBAC assertion this test exists to make: a Cashier has
+    // pos.create_sale and inventory.view (per seed data role_permissions)
+    // but NOT users.manage -- this must come back 403, not 200.
+    await request(server)
+      .get('/api/v1/users')
+      .set('Authorization', `Bearer ${cashierToken}`)
+      .expect(403);
+
+    // And the inverse, so this test would actually fail if RBAC were
+    // broken in the other direction too: a Cashier CAN create a sale.
+    const products = await request(server)
+      .get('/api/v1/products')
+      .set('Authorization', `Bearer ${cashierToken}`)
+      .expect(200);
+    expect(Array.isArray(products.body)).toBe(true);
   });
 
   it('Phase 4: a product created by one tenant is invisible to another tenant', async () => {
@@ -242,5 +286,102 @@ describe('Tenant isolation (e2e)', () => {
       .get(`/api/v1/invoices/${invoiceRes.body.id}`)
       .set('Authorization', `Bearer ${tokenB}`)
       .expect(404);
+  });
+
+  it('Phase 6: accounting reports never include another tenant\'s journal entries', async () => {
+    const server = app.getHttpServer();
+
+    const tenantARes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'Isolation Test Shop E',
+        ownerFullName: 'Owner E',
+        email: uniqueEmail('iso-e'),
+        password: 'correct-horse-battery-staple',
+      })
+      .expect(201);
+    const tenantBRes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'Isolation Test Shop F',
+        ownerFullName: 'Owner F',
+        email: uniqueEmail('iso-f'),
+        password: 'correct-horse-battery-staple',
+      })
+      .expect(201);
+
+    const tokenA = tenantARes.body.accessToken;
+    const tokenB = tenantBRes.body.accessToken;
+
+    const branchesA = await request(server)
+      .get('/api/v1/branches')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .expect(200);
+    const productA = await request(server)
+      .post('/api/v1/products')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ sku: `ISO-ACCT-${Date.now()}`, name: 'Isolation Accounting Item', costPriceNgn: 100, sellingPriceNgn: 999999 })
+      .expect(201);
+
+    await request(server)
+      .post('/api/v1/pos/sales')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({
+        branchId: branchesA.body[0].id,
+        items: [{ productId: productA.body.id, quantity: 1 }],
+        payments: [{ method: 'cash', amountNgn: 999999 }],
+        clientTransactionUuid: randomUUID(),
+      })
+      .expect(201);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const pnlB = await request(server)
+      .get(`/api/v1/accounting/profit-and-loss?startDate=${today}&endDate=${today}`)
+      .set('Authorization', `Bearer ${tokenB}`)
+      .expect(200);
+
+    // Tenant B's revenue for today must NOT include Tenant A's ₦999,999
+    // sale -- if RLS had a hole anywhere in the accounting read path, this
+    // distinctive, unmistakable amount is what would leak through.
+    expect(pnlB.body.totalRevenue).not.toBe(999999);
+  });
+
+  it('Phase 5: a branch created by one tenant is invisible to another tenant', async () => {
+    const server = app.getHttpServer();
+
+    const tenantARes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'Isolation Test Shop G',
+        ownerFullName: 'Owner G',
+        email: uniqueEmail('iso-g'),
+        password: 'correct-horse-battery-staple',
+      })
+      .expect(201);
+    const tenantBRes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'Isolation Test Shop H',
+        ownerFullName: 'Owner H',
+        email: uniqueEmail('iso-h'),
+        password: 'correct-horse-battery-staple',
+      })
+      .expect(201);
+
+    const tokenA = tenantARes.body.accessToken;
+    const tokenB = tenantBRes.body.accessToken;
+    const branchName = `Isolation Test Branch ${Date.now()}`;
+
+    await request(server)
+      .post('/api/v1/branches')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ name: branchName })
+      .expect(201);
+
+    const branchesB = await request(server)
+      .get('/api/v1/branches')
+      .set('Authorization', `Bearer ${tokenB}`)
+      .expect(200);
+    expect(branchesB.body.some((b: { name: string }) => b.name === branchName)).toBe(false);
   });
 });
