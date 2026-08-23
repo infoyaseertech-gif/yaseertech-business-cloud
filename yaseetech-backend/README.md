@@ -46,6 +46,13 @@ docker compose ps   # wait until postgres shows "healthy"
 cp .env.example .env
 ```
 
+`.env.example` already has both `DATABASE_URL` (the restricted app role)
+and `MIGRATIONS_DATABASE_URL` (the admin/superuser role) pre-filled to
+match `docker-compose.yml`'s default local setup — no edits needed for
+either if you're using the bundled Postgres container. See "Critical: the
+database role you connect as MUST NOT be a superuser" below for why
+there are two.
+
 Then edit `.env` and set a real `JWT_ACCESS_SECRET` — the app refuses to
 start with the placeholder value:
 
@@ -61,10 +68,11 @@ Paste the output in as `JWT_ACCESS_SECRET`.
 npm run migrate
 ```
 
-Expected output: all 15 migration files (`001_extensions.sql` through
-`015_auth_lookup_policy.sql`) printing `ok`. **This is the actual proof
-that Phase 2's schema is valid** — if anything fails here, that's a bug in
-a migration file, not in your setup, and should come back here to fix.
+Expected output: all 16 migration files (`001_extensions.sql` through
+`016_accountant_permissions_and_ar_backfill.sql`) printing `ok`. **This is
+the actual proof that Phase 2's schema is valid** — if anything fails
+here, that's a bug in a migration file, not in your setup, and should
+come back here to fix.
 
 ## 5. (Optional) Seed demo data
 
@@ -245,6 +253,21 @@ until it passes again.
 - `GET /branches` — list the tenant's branches
 - `GET /products`, `GET /products/:id`, `POST /products` — product catalog,
   gated by `inventory.view` / `inventory.manage`
+- `POST /products/import/preview`, `POST /products/import/commit` — bulk
+  CSV product import, gated by `inventory.manage`. Per Phase 0's risk
+  register (item 7: bulk import can silently corrupt an existing catalog),
+  this is deliberately two calls, not one: **preview** parses and
+  validates every row against both the file itself (duplicate SKUs within
+  the CSV) and the existing catalog (duplicate SKUs already in the
+  database), writing nothing — the frontend shows exactly what would
+  happen before anything is saved. **Commit** re-validates from scratch
+  (never trusts that what the client previewed is still accurate — someone
+  else on the team could have added a conflicting SKU in the meantime) and
+  imports only the rows that pass; invalid rows are skipped and reported,
+  not treated as a reason to reject the whole file. A row with an opening
+  quantity creates a real `inventory_stock` row and an `inventory_movements`
+  entry (append-only ledger, same as every other stock change), not a
+  bare number with no audit trail.
 - `GET /inventory/stock?branchId=`, `POST /inventory/adjustments` — stock
   levels and manual adjustments (recount/damage/spoilage/theft), each
   writing an append-only `inventory_movements` row and flagging negative
@@ -290,6 +313,23 @@ until it passes again.
   trail: every journal entry and its lines, most recent first.
 - `GET /accounting/chart-of-accounts` — every account with its current
   balance.
+- `PATCH /users/:id` — reassigns an existing team member's role and/or
+  branch. Refuses outright to edit whoever currently holds the Business
+  Owner role — that role only exists via registration, and there's no
+  ownership-transfer feature, so allowing this would risk a business
+  locking itself out of its own account with no way to reverse it. Assumes
+  one role per user at a time (deletes the existing `user_roles` row and
+  inserts the new one) — the schema technically allows more, but nothing
+  in this app creates that yet.
+- `GET /dashboard/summary?branchId=` — the numbers behind the Overview
+  page: today's sales, low-stock items, outstanding invoice total, active
+  team size. **Field-level RBAC, not endpoint-level**: every authenticated
+  role can call this, but each section only appears if the caller actually
+  has the permission it depends on (today's sales needs `pos.create_sale`
+  or `accounting.view`; outstanding invoices needs `invoicing.manage`;
+  team size needs `users.manage`) — a Cashier and a Business Owner calling
+  this endpoint get genuinely different response shapes, not the same data
+  with something hidden client-side.
 - `GET /health` — checks the database connection
 - **Row-Level Security enforced from application code**: `DatabaseService.withTenantContext()`
   sets `app.current_tenant_id` per-transaction from the verified JWT —
@@ -322,9 +362,21 @@ until it passes again.
   the actual offline-capable client is a separate, later build.
 - 2FA / SSO — the `users` table already has the columns reserved
   (Phase 1, Section 4.3), but nothing reads or writes them yet.
-- Editing an existing team member's role, or reassigning them to a
-  different branch, after they're created — `POST /users` only covers
-  creation right now.
+- Resetting a teammate's password, or editing their name/email —
+  `PATCH /users/:id` covers role/branch reassignment only, deliberately.
+  Password resets and contact-info edits are different, more sensitive
+  operations that deserve their own validation and audit trail rather
+  than being bundled into this endpoint.
+
+## A small refactor worth knowing about
+
+While building the dashboard summary, the permission-lookup query that
+`PermissionsGuard` used inline got extracted into
+`src/common/auth/permissions.helper.ts` (`getUserPermissionCodes`), since
+the dashboard needed the exact same lookup for its field-level visibility
+logic. Both now call the same function — worth knowing if you're modifying
+RBAC behavior, since there's only one place that needs to change now,
+not two that could quietly drift apart.
 
 ## Known simplifications in the POS/accounting integration, stated plainly
 
@@ -366,6 +418,67 @@ up automatically.
   background jobs exist.
 - **Invoice numbers are time-based, not a gapless sequence**, same
   reasoning and same caveat as POS receipt numbers.
+
+## Critical: the database role you connect as MUST NOT be a superuser
+
+This isn't a style preference — it's the difference between tenant
+isolation actually working and silently not working at all.
+
+**What happened:** during real local testing (not caught by the automated
+tests, which use whatever role runs them), the app was connected to
+Postgres as a superuser — Railway's default `postgres` account, and (it
+turns out) this project's own `docker-compose.yml` had the exact same
+problem: the official Postgres image makes `POSTGRES_USER` a superuser
+automatically. **PostgreSQL superusers bypass Row-Level Security
+unconditionally, regardless of `FORCE ROW LEVEL SECURITY`.** Every RLS
+policy in this schema (migration 012) was being silently ignored. The
+symptom: a freshly registered business could see other tenants' branches
+and team member counts on its own dashboard — a real cross-tenant data
+leak, caused entirely by *which role* was connecting, not a flaw in the
+policies themselves.
+
+**This is now fixed structurally, not just documented as someone else's
+problem to remember:**
+
+- `docker-compose.yml` mounts `docker/init-app-role.sql`, which
+  automatically creates a restricted `yaseetech_app` role (`NOSUPERUSER
+  NOBYPASSRLS`) the first time the container starts, with default
+  privileges set up so it automatically gets access to tables created
+  later by migrations.
+- `.env.example` now has **two** connection strings:
+  `DATABASE_URL` (the restricted role — what the running app actually
+  connects as) and `MIGRATIONS_DATABASE_URL` (an admin/superuser
+  connection, used only by `npm run migrate` and `npm run seed`, which
+  need privileges like `CREATE TABLE` that the restricted role
+  deliberately doesn't have).
+- If you already have an existing local Postgres volume from before this
+  fix, the init script won't retroactively run (`docker-entrypoint-initdb.d`
+  scripts only run on first container creation) — run `docker compose down
+  -v` (removes the volume) then `docker compose up -d` again to get a
+  fresh container that picks it up.
+
+**On a managed provider (Railway, Supabase, etc.) that hands you a
+superuser by default**, run the equivalent manually against that
+database before pointing `DATABASE_URL` at it:
+
+```sql
+CREATE ROLE yaseetech_app WITH LOGIN PASSWORD '<a real password>' NOSUPERUSER NOBYPASSRLS;
+GRANT USAGE ON SCHEMA public TO yaseetech_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO yaseetech_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO yaseetech_app;
+```
+
+(Use `ALL TABLES`/`ALL SEQUENCES` here, not `ALTER DEFAULT PRIVILEGES`,
+since on a provider like this the tables already exist from migrations
+you've already run — unlike the local Docker init script, which runs
+*before* any table exists.)
+
+**Worth adding to CI eventually:** a test that explicitly checks
+`SELECT rolsuper FROM pg_roles WHERE rolname = current_user` returns
+`false` against whatever role the app is actually configured to use in
+each environment — this class of bug is exactly the kind that's invisible
+until someone looks at real data from a second account, which is easy to
+never do until a customer does it for you.
 
 ## Known simplifications in accounting reports (Phase 6), stated plainly
 

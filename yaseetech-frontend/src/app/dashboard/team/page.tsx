@@ -26,6 +26,9 @@ export default function TeamPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Which row is currently in edit mode, if any -- only one at a time.
+  const [editingId, setEditingId] = useState<string | null>(null);
+
   function loadTeam() {
     apiFetch<TeamMemberWithRole[]>('/users')
       .then(setTeam)
@@ -199,31 +202,154 @@ export default function TeamPage() {
                 <th className="px-5 py-3 font-medium text-ink-soft">Branch</th>
                 <th className="px-5 py-3 font-medium text-ink-soft">Status</th>
                 <th className="px-5 py-3 font-medium text-ink-soft">Joined</th>
+                <th className="px-5 py-3 font-medium text-ink-soft"></th>
               </tr>
             </thead>
             <tbody>
-              {team.map((member) => (
-                <tr key={member.id} className="border-b border-dashed border-border last:border-none">
-                  <td className="px-5 py-3.5">
-                    <p className="text-ink font-medium">{member.full_name}</p>
-                    <p className="text-xs text-ink-soft font-mono">{member.email}</p>
-                  </td>
-                  <td className="px-5 py-3.5 text-ink">{member.role_name ?? '\u2014'}</td>
-                  <td className="px-5 py-3.5 text-ink-soft text-xs">{branchName(member.branch_id)}</td>
-                  <td className="px-5 py-3.5">
-                    <span className="inline-flex items-center rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
-                      {member.status}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 text-ink-soft font-mono text-xs">
-                    {new Date(member.created_at).toLocaleDateString('en-NG')}
-                  </td>
-                </tr>
-              ))}
+              {team.map((member) =>
+                editingId === member.id ? (
+                  <EditRow
+                    key={member.id}
+                    member={member}
+                    branches={branches}
+                    onCancel={() => setEditingId(null)}
+                    onSaved={() => {
+                      setEditingId(null);
+                      loadTeam();
+                    }}
+                  />
+                ) : (
+                  <tr key={member.id} className="border-b border-dashed border-border last:border-none">
+                    <td className="px-5 py-3.5">
+                      <p className="text-ink font-medium">{member.full_name}</p>
+                      <p className="text-xs text-ink-soft font-mono">{member.email}</p>
+                    </td>
+                    <td className="px-5 py-3.5 text-ink">{member.role_name ?? '\u2014'}</td>
+                    <td className="px-5 py-3.5 text-ink-soft text-xs">{branchName(member.branch_id)}</td>
+                    <td className="px-5 py-3.5">
+                      <span className="inline-flex items-center rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
+                        {member.status}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 text-ink-soft font-mono text-xs">
+                      {new Date(member.created_at).toLocaleDateString('en-NG')}
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      {member.role_name === 'Business Owner' ? (
+                        <span className="text-xs text-ink-soft/50" title="The Business Owner role can't be changed here">
+                          &mdash;
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setEditingId(member.id)}
+                          className="text-xs font-medium text-indigo underline underline-offset-2"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ),
+              )}
             </tbody>
           </table>
         </div>
       )}
     </div>
+  );
+}
+
+function EditRow({
+  member,
+  branches,
+  onCancel,
+  onSaved,
+}: {
+  member: TeamMemberWithRole;
+  branches: Branch[];
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [role, setRole] = useState<AssignableRole>((member.role_name as AssignableRole) ?? 'Staff');
+  const [branchId, setBranchId] = useState(member.branch_id ?? branches[0]?.id ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setError(null);
+    if (BRANCH_SCOPED_ROLES.has(role) && !branchId) {
+      setError(`The "${role}" role needs a branch.`);
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiFetch(`/users/${member.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role, branchId: role === 'Accountant' ? undefined : branchId }),
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not update this team member.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <tr className="border-b border-dashed border-border last:border-none bg-indigo-100/20">
+      <td className="px-5 py-3.5" colSpan={6}>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <p className="text-ink font-medium text-sm">{member.full_name}</p>
+            <p className="text-xs text-ink-soft font-mono">{member.email}</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-ink-soft mb-1">Role</label>
+            <select
+              className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm text-ink"
+              value={role}
+              onChange={(e) => setRole(e.target.value as AssignableRole)}
+            >
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {BRANCH_SCOPED_ROLES.has(role) && (
+            <div>
+              <label className="block text-xs font-medium text-ink-soft mb-1">Branch</label>
+              <select
+                className="rounded-lg border border-border bg-white px-3 py-1.5 text-sm text-ink"
+                value={branchId}
+                onChange={(e) => setBranchId(e.target.value)}
+              >
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button onClick={handleSave} loading={saving}>
+              Save
+            </Button>
+            <button
+              onClick={onCancel}
+              className="rounded-lg border border-border px-4 py-2.5 text-sm text-ink-soft hover:text-ink"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+        {error && <p className="mt-2 text-sm text-danger">{error}</p>}
+      </td>
+    </tr>
   );
 }

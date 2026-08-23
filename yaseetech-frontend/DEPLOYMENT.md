@@ -35,44 +35,79 @@ Create a new repo on GitHub and push to it.
 
 ### 3. Add PostgreSQL
 - In the same Railway project: **New** → **Database** → **Add PostgreSQL**.
-- Railway provisions it and exposes a `DATABASE_URL` — copy it (or better,
-  reference it directly; see step 4).
+- Railway provisions it and exposes `DATABASE_URL` — **do not wire this
+  directly to your backend service.** It connects as Railway's default
+  `postgres` account, which is a **superuser**, and PostgreSQL superusers
+  silently bypass Row-Level Security — every tenant-isolation policy in
+  this schema would be ignored, and one business could see another's data.
+  This is a real bug that was found the hard way; see "Critical: the
+  database role you connect as MUST NOT be a superuser" in the backend's
+  own `README.md` for the full story.
 
-### 4. Set environment variables
+### 4. Create the restricted application role
+Before setting any environment variables, connect to this new Postgres
+instance (its **Connect** tab has a `psql` command, or use any Postgres
+client) and run:
+```sql
+CREATE ROLE yaseetech_app WITH LOGIN PASSWORD '<a real password>' NOSUPERUSER NOBYPASSRLS;
+GRANT USAGE ON SCHEMA public TO yaseetech_app;
+```
+(The `GRANT ... ON ALL TABLES` step comes after migrations run, in step 6
+below — there are no tables yet at this point.)
+
+### 5. Set environment variables
 On the backend service (not the database) → **Variables**:
 ```
 NODE_ENV=production
-DATABASE_URL=${{Postgres.DATABASE_URL}}
+DATABASE_URL=postgresql://yaseetech_app:<the password you set>@<private host from Postgres's Connect tab>:5432/railway
+MIGRATIONS_DATABASE_URL=${{Postgres.DATABASE_URL}}
 JWT_ACCESS_SECRET=<run: openssl rand -base64 48>
 JWT_ACCESS_EXPIRES_IN=15m
 REFRESH_TOKEN_EXPIRES_IN_DAYS=30
 FRONTEND_URL=https://your-app.vercel.app
 ```
-`${{Postgres.DATABASE_URL}}` is Railway's variable-reference syntax — it
-automatically wires up the database connection without copy-pasting a
-connection string. You won't have the real `FRONTEND_URL` until Part 2 —
-come back and set it once Vercel gives you a URL. Until then, CORS will
-reject the frontend's requests, which is expected and not a bug.
+For `DATABASE_URL`, use Postgres's **Private Network** hostname (Connect
+tab → "Private Network", something like `postgres.railway.internal`) —
+your backend service and Postgres already live in the same Railway
+project, so there's no need to route through the public endpoint (which
+costs egress and needlessly exposes the database to the internet) just
+to talk to each other. Reserve the public endpoint from step 4 for
+one-off external access, like running a manual `psql` session from your
+own machine.
 
-### 5. Run migrations against the real database
+`DATABASE_URL` (restricted role) is what the running app connects as.
+`MIGRATIONS_DATABASE_URL` uses Railway's own superuser reference — that's
+fine here, since it's only ever used for the one-off migration run in
+step 6, never by the running application. You won't have the real
+`FRONTEND_URL` until Part 2 — come back and set it once Vercel gives you
+a URL. Until then, CORS will reject the frontend's requests, which is
+expected and not a bug.
+
+### 6. Run migrations against the real database, then grant the app role access
 Railway doesn't have a built-in "release phase" the way Heroku does, so
 run this manually the first time (and again any time a new migration file
 is added):
-- Railway dashboard → your backend service → **Settings** → note the
-  public `DATABASE_URL`, or use Railway's CLI:
 ```bash
 railway login
 railway link          # select this project
 railway run npm run migrate
 ```
-This runs `scripts/migrate.js` against the real Postgres instance, with
-Railway injecting the correct `DATABASE_URL` into the command's
-environment. Watch for `ok` printed next to each of the 16 migration
-files. If one fails, that's a real bug to fix, not a deploy-config issue.
+This runs `scripts/migrate.js`, which prefers `MIGRATIONS_DATABASE_URL`
+(the superuser connection) precisely so it can create tables/triggers
+that the restricted role can't. Watch for `ok` printed next to each of
+the 16 migration files. If one fails, that's a real bug to fix, not a
+deploy-config issue.
+
+**Now that tables exist**, go back to the Postgres connection from step 4
+and finish granting the app role access:
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO yaseetech_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO yaseetech_app;
+```
 
 Optionally: `railway run npm run seed` for the demo dataset.
 
-### 6. Verify
+### 7. Verify
 Railway gives the service a public URL (Settings → Networking → Generate
 Domain if it isn't already there). Check:
 ```bash
@@ -80,6 +115,13 @@ curl https://your-backend.up.railway.app/api/v1/health
 ```
 Expect `{"status":"ok","database":"connected",...}`. If `database` says
 `unreachable`, double-check the `DATABASE_URL` variable reference.
+
+**Then verify RLS is actually working, not just "connected"** — register
+two different businesses through the real live URL and confirm neither
+sees the other's branches, team, or data anywhere. This is the check that
+would have caught the superuser bug immediately; don't skip it just
+because `/health` looks fine — a superuser connection reports
+`"connected"` too.
 
 ---
 

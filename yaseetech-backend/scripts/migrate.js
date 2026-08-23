@@ -10,6 +10,16 @@ const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
 
+// Migrations create tables, extensions, and triggers -- operations a
+// restricted application role (see README.md, "Critical: the database
+// role you connect as MUST NOT be a superuser") isn't granted to do, and
+// shouldn't be. MIGRATIONS_DATABASE_URL is the superuser/admin connection
+// used only here and in seed.js; DATABASE_URL is what the running app
+// actually connects as. Falls back to DATABASE_URL if
+// MIGRATIONS_DATABASE_URL isn't set, so this still works against a setup
+// that hasn't split the two yet.
+const connectionString = process.env.MIGRATIONS_DATABASE_URL || process.env.DATABASE_URL;
+
 async function main() {
   const migrationsDir = path.join(__dirname, '..', 'migrations');
   const files = fs
@@ -22,7 +32,7 @@ async function main() {
     process.exit(1);
   }
 
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  const client = new Client({ connectionString });
   await client.connect();
 
   console.log(`Connected. Running ${files.length} migration(s)...\n`);

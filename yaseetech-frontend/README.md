@@ -84,6 +84,21 @@ Open **http://localhost:3001**. You should land on `/login`.
    password you set. Log out, log back in as that Cashier, and confirm
    the sidebar's **Team** page shows the "you don't have access" state —
    not an error, a deliberate RBAC block.
+9. While still logged in as that Cashier, check the **Overview** page —
+   you should see "Today's sales" and "Low stock items" cards, but NOT
+   "Outstanding invoices" or "Team members" — those need permissions a
+   Cashier doesn't have. Log back in as the Business Owner and confirm
+   all four cards appear.
+10. On **Team**, click **Edit** next to the Cashier you created, change
+    their role to **Branch Manager**, save — confirm the table updates
+    immediately. Confirm your own row (the Business Owner) has no Edit
+    link at all.
+11. On **Inventory**, click **Import CSV** → **Download a template**,
+    open it, add a couple more rows (or deliberately leave one blank to
+    see the validation work), save, then choose that file. Confirm the
+    preview shows the right ready/skipped counts *before* you click
+    Import, and that the product list only updates after you actually
+    confirm.
 
 **Before step 6 will work, make sure the backend has run migration 016**
 (`016_accountant_permissions_and_ar_backfill.sql`) — it's what backfills
@@ -112,14 +127,27 @@ Mono** (amounts, emails, dates — anything tabular/data-like).
 
 - `/login`, `/register` — real calls to the backend, real error messages
   surfaced from the API's `{ error: { code, message } }` shape
-- `/dashboard` — the caller's own profile, proving JWT + tenant context
+- `/dashboard` — real business metrics, not just a profile card: today's
+  sales, outstanding invoice total (with overdue count flagged separately),
+  low-stock items needing restocking, and active team size. **Field-level
+  RBAC**: a Cashier and a Business Owner see genuinely different cards,
+  since the backend only includes each section if the caller has the
+  permission it depends on — the frontend just renders whatever comes
+  back, it doesn't decide what to hide.
 - `/dashboard/pos` — real checkout: pick products, adjust quantities,
   choose a payment method, charge. Calls `POST /pos/sales` with a real
   client-generated idempotency key, shows a real receipt from the response
   (not a client-side calculation), and surfaces the backend's negative-stock
   warning if a sale pushes inventory below zero.
 - `/dashboard/inventory` — add products, view stock on hand per branch,
-  with a low-stock indicator driven by the product's real `reorder_level`
+  with a low-stock indicator driven by the product's real `reorder_level`.
+  Also has a real **bulk CSV import**: choose a file, it's checked against
+  `/products/import/preview` immediately (nothing saved yet), showing a
+  count of rows ready to import versus rows that will be skipped with the
+  specific reason for each (missing field, duplicate SKU in the file,
+  duplicate SKU already in your catalog) — only after reviewing that does
+  "Import N products" actually write anything. A "Download a template"
+  link gives the exact expected column headers.
 - `/dashboard/invoices` — create draft invoices (add a customer inline or
   pick an existing one, add line items), and `/dashboard/invoices/[id]` to
   send a draft (posting the real accrual journal entry) and record
@@ -133,11 +161,14 @@ Mono** (amounts, emails, dates — anything tabular/data-like).
   a decorative number.
 - `/dashboard/team` — `GET /users`, gated by the `users.manage` RBAC
   permission, with a genuine "you don't have access" state (not just a
-  generic error) if that permission is missing. Also has a real
+  generic error) if that permission is missing. Has a real
   "+ Add team member" form: name, email, a password you set directly
   (no email-invite system yet), a role (Branch Manager / Accountant /
   Cashier / Staff — never Business Owner), and a branch for roles that
-  need one.
+  need one. Each row also has an **Edit** action that opens inline, real
+  role/branch reassignment via `PATCH /users/:id` — except the Business
+  Owner's own row, which shows no Edit link at all, matching the
+  backend's refusal to let that role be changed here.
 - `/dashboard/branches` — list branches, add new ones. Creating a branch
   needs `branches.manage_all` (Business Owner only); a Branch Manager
   hitting the form gets a real 403 from the backend, not a client-side

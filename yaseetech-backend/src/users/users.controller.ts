@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
@@ -6,6 +6,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequestUser } from '../common/guards/request-user.interface';
 import { UsersService } from './users.service';
 import { CreateTeamMemberDto } from './dto/create-team-member.dto';
+import { UpdateTeamMemberDto } from './dto/update-team-member.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -42,6 +43,20 @@ export class UsersController {
   @RequirePermissions('users.manage')
   createTeamMember(@CurrentUser() user: RequestUser, @Body() dto: CreateTeamMemberDto) {
     return this.usersService.createTeamMember(user, dto);
+  }
+
+  // Reassigns an existing teammate's role and/or branch. Cannot target
+  // whoever currently holds the Business Owner role -- see
+  // UsersService.updateTeamMember for why.
+  @Patch(':id')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('users.manage')
+  updateTeamMember(
+    @CurrentUser() user: RequestUser,
+    @Param('id') targetUserId: string,
+    @Body() dto: UpdateTeamMemberDto,
+  ) {
+    return this.usersService.updateTeamMember(user, targetUserId, dto);
   }
 }
 

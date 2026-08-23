@@ -25,14 +25,25 @@ CREATE TRIGGER trg_journal_entry_lines_append_only
     BEFORE UPDATE OR DELETE ON journal_entry_lines
     FOR EACH ROW EXECUTE FUNCTION fn_block_mutation();
 
-CREATE TRIGGER trg_inventory_movements_append_only
-    BEFORE UPDATE OR DELETE ON inventory_movements
+-- Two triggers instead of one BEFORE UPDATE OR DELETE trigger, because
+-- TG_OP is NOT accessible inside a trigger's WHEN clause (it's only valid
+-- inside the function body) -- an earlier version of this file tried to
+-- write `WHEN (TG_OP = 'DELETE' OR ...)` and failed with "column tg_op
+-- does not exist" the first time this migration actually ran against a
+-- real database. Splitting into DELETE (always blocked, no WHEN needed)
+-- and UPDATE (conditionally blocked, WHEN only touches OLD/NEW) avoids
+-- needing TG_OP in a WHEN clause at all.
+CREATE TRIGGER trg_inventory_movements_no_delete
+    BEFORE DELETE ON inventory_movements
+    FOR EACH ROW EXECUTE FUNCTION fn_block_mutation();
+
+CREATE TRIGGER trg_inventory_movements_restricted_update
+    BEFORE UPDATE ON inventory_movements
     FOR EACH ROW
     -- Exception: resolving a flagged sync conflict legitimately updates
     -- is_conflict_flagged / conflict_resolved_at / conflict_resolved_by only.
     -- Everything else about the row (the movement itself) stays immutable.
     WHEN (
-        TG_OP = 'DELETE' OR
         (OLD.quantity_delta IS DISTINCT FROM NEW.quantity_delta) OR
         (OLD.movement_type IS DISTINCT FROM NEW.movement_type) OR
         (OLD.product_id IS DISTINCT FROM NEW.product_id) OR

@@ -6,6 +6,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequestUser } from '../common/guards/request-user.interface';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
+import { ImportCommitDto, ImportPreviewDto } from './dto/import-products.dto';
 
 @Controller('products')
 @UseGuards(JwtAuthGuard)
@@ -35,5 +36,22 @@ export class ProductsController {
   @RequirePermissions('inventory.manage')
   create(@CurrentUser() user: RequestUser, @Body() dto: CreateProductDto) {
     return this.productsService.create(user, dto);
+  }
+
+  // Validates a CSV and reports what would happen -- writes nothing.
+  // The frontend calls this first, shows the person exactly which rows
+  // are valid/invalid, and only calls /import/commit if they confirm.
+  @Post('import/preview')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('inventory.manage')
+  importPreview(@CurrentUser() user: RequestUser, @Body() dto: ImportPreviewDto) {
+    return this.productsService.importPreview(user, dto);
+  }
+
+  @Post('import/commit')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('inventory.manage')
+  importCommit(@CurrentUser() user: RequestUser, @Body() dto: ImportCommitDto) {
+    return this.productsService.importCommit(user, dto);
   }
 }

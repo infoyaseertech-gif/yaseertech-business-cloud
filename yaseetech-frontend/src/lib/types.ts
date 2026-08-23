@@ -97,6 +97,40 @@ export interface SaleResult {
   inventoryWarnings: string | null;
 }
 
+export interface ImportInvalidRow {
+  rowNumber: number;
+  errors: string[];
+  raw: Record<string, string>;
+}
+
+export interface ImportValidRow {
+  rowNumber: number;
+  sku: string;
+  name: string;
+  category: string | null;
+  costPriceNgn: number;
+  sellingPriceNgn: number;
+  unitOfMeasure: string;
+  barcode: string | null;
+  initialQuantity: number;
+}
+
+export interface ImportPreviewResult {
+  totalRows: number;
+  validCount: number;
+  invalidCount: number;
+  validRows: ImportValidRow[];
+  invalidRows: ImportInvalidRow[];
+  duplicateSkusInFile: string[];
+  duplicateSkusInDb: string[];
+}
+
+export interface ImportCommitResult {
+  imported: number;
+  skipped: number;
+  skippedDetails: ImportInvalidRow[];
+}
+
 export interface Customer {
   id: string;
   full_name: string;
@@ -176,3 +210,19 @@ export interface TeamMemberWithRole {
 }
 
 export type AssignableRole = 'Branch Manager' | 'Accountant' | 'Cashier' | 'Staff';
+
+export interface DashboardSummary {
+  todaySales: { total: number; count: number } | null;
+  lowStock: {
+    items: {
+      productId: string;
+      productName: string;
+      branchId: string;
+      branchName: string;
+      quantityOnHand: number;
+      reorderLevel: number;
+    }[];
+  } | null;
+  outstandingInvoices: { count: number; total: number; overdueCount: number } | null;
+  teamSize: number | null;
+}

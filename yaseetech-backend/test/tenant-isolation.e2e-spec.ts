@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 
@@ -383,5 +383,252 @@ describe('Tenant isolation (e2e)', () => {
       .set('Authorization', `Bearer ${tokenB}`)
       .expect(200);
     expect(branchesB.body.some((b: { name: string }) => b.name === branchName)).toBe(false);
+  });
+
+  it('dashboard summary never mixes tenants, and hides sections the caller lacks permission for', async () => {
+    const server = app.getHttpServer();
+
+    const ownerRes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'Dashboard Test Shop',
+        ownerFullName: 'Dashboard Owner',
+        email: uniqueEmail('dash-owner'),
+        password: 'correct-horse-battery-staple',
+      })
+      .expect(201);
+    const ownerToken = ownerRes.body.accessToken;
+
+    const branches = await request(server)
+      .get('/api/v1/branches')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    const branchId = branches.body[0].id;
+
+    const product = await request(server)
+      .post('/api/v1/products')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ sku: `DASH-${Date.now()}`, name: 'Dashboard Test Item', costPriceNgn: 100, sellingPriceNgn: 777777 })
+      .expect(201);
+
+    await request(server)
+      .post('/api/v1/pos/sales')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        branchId,
+        items: [{ productId: product.body.id, quantity: 1 }],
+        payments: [{ method: 'cash', amountNgn: 777777 }],
+        clientTransactionUuid: randomUUID(),
+      })
+      .expect(201);
+
+    // Owner sees the sale in their own dashboard.
+    const ownerSummary = await request(server)
+      .get('/api/v1/dashboard/summary')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    expect(ownerSummary.body.todaySales.total).toBeGreaterThanOrEqual(777777);
+    expect(ownerSummary.body.outstandingInvoices).not.toBeNull(); // Owner has invoicing.manage
+
+    // A Cashier in the SAME tenant sees sales, but not the invoicing section.
+    const cashierEmail = uniqueEmail('dash-cashier');
+    await request(server)
+      .post('/api/v1/users')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        fullName: 'Dashboard Cashier',
+        email: cashierEmail,
+        password: 'correct-horse-battery-staple',
+        role: 'Cashier',
+        branchId,
+      })
+      .expect(201);
+    const cashierLogin = await request(server)
+      .post('/api/v1/auth/login')
+      .send({ email: cashierEmail, password: 'correct-horse-battery-staple' })
+      .expect(200);
+
+    const cashierSummary = await request(server)
+      .get('/api/v1/dashboard/summary')
+      .set('Authorization', `Bearer ${cashierLogin.body.accessToken}`)
+      .expect(200);
+    expect(cashierSummary.body.todaySales).not.toBeNull(); // Cashier has pos.create_sale
+    expect(cashierSummary.body.outstandingInvoices).toBeNull(); // Cashier lacks invoicing.manage
+    expect(cashierSummary.body.teamSize).toBeNull(); // Cashier lacks users.manage
+
+    // A completely different tenant must never see this ₦777,777 sale.
+    const otherTenantRes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'Dashboard Isolation Shop',
+        ownerFullName: 'Other Owner',
+        email: uniqueEmail('dash-other'),
+        password: 'correct-horse-battery-staple',
+      })
+      .expect(201);
+    const otherSummary = await request(server)
+      .get('/api/v1/dashboard/summary')
+      .set('Authorization', `Bearer ${otherTenantRes.body.accessToken}`)
+      .expect(200);
+    expect(otherSummary.body.todaySales.total).not.toBe(777777);
+  });
+
+  it('PATCH /users/:id updates a team member, refuses to edit the Business Owner, and stays tenant-isolated', async () => {
+    const server = app.getHttpServer();
+
+    const ownerRes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'Edit Team Test Shop',
+        ownerFullName: 'Edit Test Owner',
+        email: uniqueEmail('edit-owner'),
+        password: 'correct-horse-battery-staple',
+      })
+      .expect(201);
+    const ownerToken = ownerRes.body.accessToken;
+    const ownerUserId = ownerRes.body.user.id;
+
+    const branches = await request(server)
+      .get('/api/v1/branches')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    const branchId = branches.body[0].id;
+
+    const cashierRes = await request(server)
+      .post('/api/v1/users')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        fullName: 'Editable Cashier',
+        email: uniqueEmail('editable-cashier'),
+        password: 'correct-horse-battery-staple',
+        role: 'Cashier',
+        branchId,
+      })
+      .expect(201);
+
+    // The actual feature: promote this Cashier to Branch Manager.
+    const updated = await request(server)
+      .patch(`/api/v1/users/${cashierRes.body.id}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ role: 'Branch Manager', branchId })
+      .expect(200);
+    expect(updated.body.role).toBe('Branch Manager');
+
+    const list = await request(server)
+      .get('/api/v1/users')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    const editedMember = list.body.find((u: { id: string }) => u.id === cashierRes.body.id);
+    expect(editedMember.role_name).toBe('Branch Manager');
+
+    // The safety guard: the Owner cannot use this endpoint on themselves
+    // (or, by the same rule, on any other Business Owner).
+    await request(server)
+      .patch(`/api/v1/users/${ownerUserId}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ role: 'Staff', branchId })
+      .expect(403);
+
+    // Tenant isolation: a different tenant's owner can't edit this
+    // tenant's team member, even by guessing/reusing the real user ID --
+    // RLS makes the target simply not exist from their perspective.
+    const otherTenantRes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'Edit Team Isolation Shop',
+        ownerFullName: 'Other Edit Owner',
+        email: uniqueEmail('edit-other'),
+        password: 'correct-horse-battery-staple',
+      })
+      .expect(201);
+
+    await request(server)
+      .patch(`/api/v1/users/${cashierRes.body.id}`)
+      .set('Authorization', `Bearer ${otherTenantRes.body.accessToken}`)
+      .send({ role: 'Staff', branchId })
+      .expect(404);
+  });
+
+  it('bulk CSV import: preview validates without writing, commit imports only valid rows, duplicate detection is tenant-scoped', async () => {
+    const server = app.getHttpServer();
+    const uniqueSku = `CSV-${Date.now()}`;
+
+    const ownerRes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'CSV Import Test Shop',
+        ownerFullName: 'CSV Owner',
+        email: uniqueEmail('csv-owner'),
+        password: 'correct-horse-battery-staple',
+      })
+      .expect(201);
+    const ownerToken = ownerRes.body.accessToken;
+
+    const branches = await request(server)
+      .get('/api/v1/branches')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    const branchId = branches.body[0].id;
+
+    // Row 1: valid. Row 2: invalid (missing name). Row 3: duplicate SKU
+    // of row 1, within the same file.
+    const csv = [
+      'sku,name,category,cost_price_ngn,selling_price_ngn,unit_of_measure,barcode,initial_quantity',
+      `${uniqueSku},Imported Test Product,Staples,1000,1500,unit,,25`,
+      `${uniqueSku}-BAD,,Staples,500,800,unit,,10`,
+      `${uniqueSku},Duplicate Row,Staples,1000,1500,unit,,5`,
+    ].join('\n');
+
+    const preview = await request(server)
+      .post('/api/v1/products/import/preview')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ csvContent: csv })
+      .expect(201);
+    expect(preview.body.validCount).toBe(1);
+    expect(preview.body.invalidCount).toBe(2);
+
+    const commit = await request(server)
+      .post('/api/v1/products/import/commit')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ csvContent: csv, branchId })
+      .expect(201);
+    expect(commit.body.imported).toBe(1);
+    expect(commit.body.skipped).toBe(2);
+
+    const products = await request(server)
+      .get('/api/v1/products')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    const imported = products.body.find((p: { sku: string }) => p.sku === uniqueSku);
+    expect(imported).toBeDefined();
+    expect(imported.name).toBe('Imported Test Product');
+
+    const stock = await request(server)
+      .get(`/api/v1/inventory/stock?branchId=${branchId}`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(200);
+    const stockRow = stock.body.find((s: { sku: string }) => s.sku === uniqueSku);
+    expect(Number(stockRow.quantity_on_hand)).toBe(25);
+
+    // Tenant isolation: a completely different tenant importing a CSV with
+    // the SAME sku text must succeed -- the duplicate-in-catalog check is
+    // scoped to the caller's own products, not global.
+    const otherTenantRes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'CSV Import Isolation Shop',
+        ownerFullName: 'Other CSV Owner',
+        email: uniqueEmail('csv-other'),
+        password: 'correct-horse-battery-staple',
+      })
+      .expect(201);
+
+    const otherPreview = await request(server)
+      .post('/api/v1/products/import/preview')
+      .set('Authorization', `Bearer ${otherTenantRes.body.accessToken}`)
+      .send({ csvContent: `sku,name,cost_price_ngn,selling_price_ngn\n${uniqueSku},Same SKU Different Tenant,1000,1500` })
+      .expect(201);
+    expect(otherPreview.body.validCount).toBe(1);
+    expect(otherPreview.body.duplicateSkusInDb).toHaveLength(0);
   });
 });

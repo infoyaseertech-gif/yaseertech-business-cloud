@@ -10,6 +10,7 @@ import { DatabaseService } from '../database/database.service';
 import { AppException } from '../exceptions/app.exception';
 import { PERMISSIONS_KEY } from '../decorators/require-permissions.decorator';
 import { RequestUser } from './request-user.interface';
+import { getUserPermissionCodes } from '../auth/permissions.helper';
 
 /**
  * The runtime implementation of the RBAC matrix from Phase 1, Section 4.2.
@@ -47,17 +48,7 @@ export class PermissionsGuard implements CanActivate {
 
     const granted = await this.db.withTenantContext(
       { tenantId, userId, actorType: 'user' },
-      async (client) => {
-        const result = await client.query(
-          `SELECT DISTINCT p.code
-           FROM user_roles ur
-           JOIN role_permissions rp ON rp.role_id = ur.role_id
-           JOIN permissions p ON p.id = rp.permission_id
-           WHERE ur.user_id = $1 AND ur.tenant_id = $2`,
-          [userId, tenantId],
-        );
-        return result.rows.map((r: { code: string }) => r.code);
-      },
+      (client) => getUserPermissionCodes(client, userId, tenantId),
     );
 
     const hasAll = requiredPermissions.every((p) => granted.includes(p));

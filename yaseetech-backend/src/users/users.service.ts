@@ -4,6 +4,7 @@ import { DatabaseService } from '../common/database/database.service';
 import { AppException } from '../common/exceptions/app.exception';
 import { RequestUser } from '../common/guards/request-user.interface';
 import { CreateTeamMemberDto } from './dto/create-team-member.dto';
+import { UpdateTeamMemberDto } from './dto/update-team-member.dto';
 
 const BCRYPT_COST = 12;
 
@@ -141,6 +142,112 @@ export class UsersService {
         );
 
         return { ...userResult.rows[0], role: dto.role, branchId: dto.branchId ?? null };
+      },
+    );
+  }
+
+  /**
+   * Reassigns an existing teammate's role and/or branch.
+   *
+   * v1 simplification, stated plainly: a user is assumed to hold exactly
+   * one role at a time (matching createTeamMember, which only ever
+   * inserts one user_roles row). This deletes whatever role assignment
+   * currently exists for the target user and inserts the new one, rather
+   * than supporting multiple simultaneous roles -- the schema technically
+   * allows more than one, but nothing in this application creates that
+   * today, so building multi-role UPDATE semantics now would be solving a
+   * problem that doesn't exist yet.
+   *
+   * Deliberately blocks editing whoever currently holds the Business
+   * Owner role: that role is only ever granted at registration
+   * (AuthService.register), and there's no ownership-transfer feature
+   * yet. Allowing this endpoint to change an Owner's role would be a
+   * quiet way to lock a business out of its own account (nobody else has
+   * users.manage to reverse it), so it's refused outright rather than
+   * trusted to the caller's judgment.
+   */
+  async updateTeamMember(requestUser: RequestUser, targetUserId: string, dto: UpdateTeamMemberDto) {
+    if (BRANCH_SCOPED_ROLES.has(dto.role) && !dto.branchId) {
+      throw new AppException(
+        'BRANCH_REQUIRED_FOR_ROLE',
+        `The "${dto.role}" role must be assigned to a specific branch.`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return this.db.withTenantContext(
+      { tenantId: requestUser.tenantId, userId: requestUser.userId, actorType: 'user' },
+      async (client) => {
+        const targetResult = await client.query(
+          `SELECT u.id, u.email, u.full_name, u.status, u.created_at, r.name AS current_role_name
+           FROM users u
+           LEFT JOIN user_roles ur ON ur.user_id = u.id AND ur.tenant_id = u.tenant_id
+           LEFT JOIN roles r ON r.id = ur.role_id
+           WHERE u.id = $1`,
+          [targetUserId],
+        );
+
+        if (targetResult.rows.length === 0) {
+          // RLS means this also covers "user exists but in a different
+          // tenant" -- that row simply never matches, same 404 either way.
+          throw new AppException(
+            'USER_NOT_FOUND',
+            'This team member could not be found.',
+            HttpStatus.NOT_FOUND,
+          );
+        }
+
+        const target = targetResult.rows[0];
+        if (target.current_role_name === 'Business Owner') {
+          throw new AppException(
+            'CANNOT_EDIT_BUSINESS_OWNER',
+            'The Business Owner role cannot be changed here.',
+            HttpStatus.FORBIDDEN,
+          );
+        }
+
+        if (dto.branchId) {
+          const branchCheck = await client.query(`SELECT id FROM branches WHERE id = $1`, [dto.branchId]);
+          if (branchCheck.rows.length === 0) {
+            throw new AppException(
+              'BRANCH_NOT_FOUND',
+              'The specified branch does not belong to your business.',
+              HttpStatus.BAD_REQUEST,
+            );
+          }
+        }
+
+        const roleResult = await client.query(
+          `SELECT id FROM roles WHERE name = $1 AND is_platform_role = false AND tenant_id IS NULL`,
+          [dto.role],
+        );
+        if (roleResult.rows.length === 0) {
+          throw new AppException(
+            'ROLE_NOT_FOUND',
+            `Role "${dto.role}" is not a recognized assignable role.`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+
+        await client.query(`DELETE FROM user_roles WHERE user_id = $1 AND tenant_id = $2`, [
+          targetUserId,
+          requestUser.tenantId,
+        ]);
+        await client.query(
+          `INSERT INTO user_roles (user_id, role_id, tenant_id, branch_id)
+           VALUES ($1, $2, $3, $4)`,
+          [targetUserId, roleResult.rows[0].id, requestUser.tenantId, dto.branchId ?? null],
+        );
+
+        return {
+          id: target.id,
+          email: target.email,
+          full_name: target.full_name,
+          status: target.status,
+          created_at: target.created_at,
+          role: dto.role,
+          branchId: dto.branchId ?? null,
+        };
       },
     );
   }

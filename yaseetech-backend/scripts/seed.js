@@ -9,11 +9,15 @@ const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
 
+// Same reasoning as migrate.js: prefer the admin connection if one's
+// configured separately from the app's own restricted DATABASE_URL.
+const connectionString = process.env.MIGRATIONS_DATABASE_URL || process.env.DATABASE_URL;
+
 async function main() {
   const seedFile = path.join(__dirname, '..', 'migrations', '014_seed_data.sql');
   const sql = fs.readFileSync(seedFile, 'utf8');
 
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  const client = new Client({ connectionString });
   await client.connect();
 
   console.log('Seeding demo data (Amaka Foods & Provisions, Bello Electronics)...');

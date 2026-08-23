@@ -1,9 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { apiFetch } from '@/lib/api';
-import { ApiError, Branch, Product, StockRow } from '@/lib/types';
+import {
+  ApiError,
+  Branch,
+  ImportCommitResult,
+  ImportPreviewResult,
+  Product,
+  StockRow,
+} from '@/lib/types';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
 import { ErrorBanner } from '@/components/ErrorBanner';
@@ -17,6 +24,10 @@ const emptyForm = {
   unitOfMeasure: 'unit',
 };
 
+const CSV_TEMPLATE_HEADERS =
+  'sku,name,category,cost_price_ngn,selling_price_ngn,unit_of_measure,barcode,initial_quantity';
+const CSV_TEMPLATE_EXAMPLE = 'RICE-50KG,Rice 50kg bag,Staples,42000,48000,bag,,40';
+
 export default function InventoryPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState<string>('');
@@ -28,6 +39,16 @@ export default function InventoryPage() {
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
+  const [showImport, setShowImport] = useState(false);
+  const [csvContent, setCsvContent] = useState<string | null>(null);
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [commitLoading, setCommitLoading] = useState(false);
+  const [commitResult, setCommitResult] = useState<ImportCommitResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const loadStock = useCallback(async (forBranchId: string) => {
     try {
       const rows = await apiFetch<StockRow[]>(`/inventory/stock?branchId=${forBranchId}`);
@@ -35,6 +56,11 @@ export default function InventoryPage() {
     } catch (err) {
       setLoadError(err instanceof ApiError ? err.message : 'Could not load stock.');
     }
+  }, []);
+
+  const loadProducts = useCallback(async () => {
+    const list = await apiFetch<Product[]>('/products');
+    setProducts(list);
   }, []);
 
   useEffect(() => {
@@ -88,6 +114,67 @@ export default function InventoryPage() {
     }
   }
 
+  function downloadTemplate() {
+    const blob = new Blob([`${CSV_TEMPLATE_HEADERS}\n${CSV_TEMPLATE_EXAMPLE}\n`], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'yaseetech-product-import-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function resetImport() {
+    setCsvContent(null);
+    setCsvFileName(null);
+    setPreview(null);
+    setCommitResult(null);
+    setImportError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  async function handleFileSelected(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportError(null);
+    setCommitResult(null);
+    setCsvFileName(file.name);
+
+    const text = await file.text();
+    setCsvContent(text);
+    setPreviewLoading(true);
+    try {
+      const result = await apiFetch<ImportPreviewResult>('/products/import/preview', {
+        method: 'POST',
+        body: JSON.stringify({ csvContent: text }),
+      });
+      setPreview(result);
+    } catch (err) {
+      setImportError(err instanceof ApiError ? err.message : 'Could not read this file.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function handleConfirmImport() {
+    if (!csvContent || !branchId) return;
+    setImportError(null);
+    setCommitLoading(true);
+    try {
+      const result = await apiFetch<ImportCommitResult>('/products/import/commit', {
+        method: 'POST',
+        body: JSON.stringify({ csvContent, branchId }),
+      });
+      setCommitResult(result);
+      setPreview(null);
+      await Promise.all([loadProducts(), loadStock(branchId)]);
+    } catch (err) {
+      setImportError(err instanceof ApiError ? err.message : 'Import failed.');
+    } finally {
+      setCommitLoading(false);
+    }
+  }
+
   return (
     <div className="max-w-4xl">
       <div className="flex items-start justify-between gap-4">
@@ -97,9 +184,28 @@ export default function InventoryPage() {
             Products &amp; stock
           </h1>
         </div>
-        <Button onClick={() => setShowForm((s) => !s)} type="button">
-          {showForm ? 'Cancel' : '+ Add product'}
-        </Button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setShowImport((s) => !s);
+              setShowForm(false);
+              if (showImport) resetImport();
+            }}
+            className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium text-ink hover:bg-paper"
+          >
+            {showImport ? 'Cancel import' : '\u2191 Import CSV'}
+          </button>
+          <Button
+            onClick={() => {
+              setShowForm((s) => !s);
+              setShowImport(false);
+            }}
+            type="button"
+          >
+            {showForm ? 'Cancel' : '+ Add product'}
+          </Button>
+        </div>
       </div>
 
       {branches.length > 1 && (
@@ -122,6 +228,130 @@ export default function InventoryPage() {
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {showImport && (
+        <div className="mt-6 rounded-2xl border border-border bg-white p-6">
+          {!csvContent && (
+            <>
+              <p className="text-sm text-ink-soft">
+                Upload a CSV of products to add many at once. Nothing is saved until you review
+                and confirm the results below.
+              </p>
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded-lg bg-indigo px-4 py-2.5 text-sm font-medium text-paper hover:bg-indigo-600"
+                >
+                  Choose CSV file
+                </button>
+                <button type="button" onClick={downloadTemplate} className="text-sm text-indigo underline underline-offset-2">
+                  Download a template
+                </button>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleFileSelected}
+                className="hidden"
+              />
+              <p className="mt-3 text-xs text-ink-soft font-mono">{CSV_TEMPLATE_HEADERS}</p>
+            </>
+          )}
+
+          {csvContent && (
+            <div>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-ink">
+                  <span className="font-medium">{csvFileName}</span>
+                </p>
+                <button type="button" onClick={resetImport} className="text-xs text-ink-soft underline">
+                  Choose a different file
+                </button>
+              </div>
+
+              <ErrorBanner message={importError} />
+
+              {previewLoading && <p className="mt-4 text-sm text-ink-soft">Checking your file&hellip;</p>}
+
+              {preview && !commitResult && (
+                <div className="mt-4">
+                  <div className="flex gap-4">
+                    <div className="rounded-lg bg-success/10 px-4 py-2.5">
+                      <p className="text-xs text-ink-soft">Ready to import</p>
+                      <p className="font-display text-xl font-semibold text-success">{preview.validCount}</p>
+                    </div>
+                    <div className="rounded-lg bg-danger/10 px-4 py-2.5">
+                      <p className="text-xs text-ink-soft">Will be skipped</p>
+                      <p className="font-display text-xl font-semibold text-danger">{preview.invalidCount}</p>
+                    </div>
+                  </div>
+
+                  {preview.invalidRows.length > 0 && (
+                    <div className="mt-4 max-h-56 overflow-y-auto rounded-lg border border-border">
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-indigo-100/60">
+                          <tr className="text-left">
+                            <th className="px-3 py-2 font-medium text-ink-soft">Row</th>
+                            <th className="px-3 py-2 font-medium text-ink-soft">Problem</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {preview.invalidRows.map((row) => (
+                            <tr key={row.rowNumber} className="border-t border-border">
+                              <td className="px-3 py-2 font-mono text-ink-soft">{row.rowNumber || '\u2014'}</td>
+                              <td className="px-3 py-2 text-danger">{row.errors.join(' ')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {preview.validCount > 0 ? (
+                    <div className="mt-5 flex items-center gap-3">
+                      <Button onClick={handleConfirmImport} loading={commitLoading}>
+                        Import {preview.validCount} product{preview.validCount === 1 ? '' : 's'}
+                      </Button>
+                      <span className="text-xs text-ink-soft">
+                        into <strong>{branches.find((b) => b.id === branchId)?.name}</strong>
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm text-ink-soft">
+                      No rows are valid to import &mdash; fix the file and choose it again.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {commitResult && (
+                <div className="mt-4 rounded-lg border border-success/30 bg-success/5 px-4 py-4">
+                  <p className="text-sm text-ink">
+                    Imported <strong>{commitResult.imported}</strong> product
+                    {commitResult.imported === 1 ? '' : 's'}
+                    {commitResult.skipped > 0 && (
+                      <> &mdash; {commitResult.skipped} row{commitResult.skipped === 1 ? '' : 's'} skipped</>
+                    )}
+                    .
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetImport();
+                      setShowImport(false);
+                    }}
+                    className="mt-3 text-sm text-indigo underline underline-offset-2"
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -188,7 +418,7 @@ export default function InventoryPage() {
             {products.length === 0 && (
               <tr>
                 <td colSpan={4} className="px-5 py-8 text-center text-ink-soft text-sm">
-                  No products yet &mdash; add your first one above.
+                  No products yet &mdash; add your first one above, or import a CSV.
                 </td>
               </tr>
             )}
