@@ -6,8 +6,10 @@ import * as crypto from 'crypto';
 import { DatabaseService } from '../common/database/database.service';
 import { AppException } from '../common/exceptions/app.exception';
 import { assertValidUuid } from '../common/utils/uuid.util';
+import { RequestUser } from '../common/guards/request-user.interface';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 const BCRYPT_COST = 12;
 const BUSINESS_OWNER_ROLE_NAME = 'Business Owner';
@@ -245,6 +247,63 @@ export class AuthService {
         [tenantId, tokenHash],
       );
     });
+  }
+
+  /**
+   * Changes the caller's own password. Requires the current password --
+   * not just an active session -- since a valid access token alone
+   * (readable from a device left unlocked, say) shouldn't be enough to
+   * lock everyone else out of the account.
+   *
+   * After a successful change, every OTHER refresh token for this user is
+   * revoked -- a password change is exactly the moment you'd want other
+   * sessions (a lost device, a shared computer) logged out. The current
+   * session gets a fresh token pair issued afterward so the person making
+   * the change isn't logged out of their own request.
+   */
+  async changePassword(user: RequestUser, dto: ChangePasswordDto): Promise<TokenPair> {
+    await this.db.withTenantContext(
+      { tenantId: user.tenantId, userId: user.userId, actorType: 'user' },
+      async (client) => {
+        const result = await client.query(`SELECT password_hash FROM users WHERE id = $1`, [
+          user.userId,
+        ]);
+        if (result.rows.length === 0) {
+          // Unreachable if the JWT was issued correctly, but fail loudly
+          // rather than silently, same convention as elsewhere.
+          throw new AppException(
+            'USER_NOT_FOUND',
+            'Authenticated user could not be found.',
+            HttpStatus.NOT_FOUND,
+          );
+        }
+
+        const matches = await bcrypt.compare(dto.currentPassword, result.rows[0].password_hash);
+        if (!matches) {
+          throw new AppException(
+            'CURRENT_PASSWORD_INCORRECT',
+            'Current password is incorrect.',
+            HttpStatus.UNAUTHORIZED,
+          );
+        }
+
+        const newHash = await bcrypt.hash(dto.newPassword, BCRYPT_COST);
+        await client.query(`UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2`, [
+          newHash,
+          user.userId,
+        ]);
+
+        await client.query(
+          `UPDATE refresh_tokens SET revoked_at = now()
+           WHERE user_id = $1 AND tenant_id = $2 AND revoked_at IS NULL`,
+          [user.userId, user.tenantId],
+        );
+      },
+    );
+
+    // Issued after the transaction above commits, so the newly-inserted
+    // token isn't caught by the "revoke everything" UPDATE that just ran.
+    return this.issueTokenPair(user.userId, user.tenantId);
   }
 
   private async issueTokenPair(

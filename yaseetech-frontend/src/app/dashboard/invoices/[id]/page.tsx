@@ -4,11 +4,12 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, apiFetchBlob } from '@/lib/api';
 import { ApiError, InvoiceDetail } from '@/lib/types';
 import { Button } from '@/components/Button';
 import { ErrorBanner } from '@/components/ErrorBanner';
 import { StatusBadge } from '@/components/StatusBadge';
+import { downloadBlob } from '@/lib/download-blob';
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -93,7 +94,18 @@ export default function InvoiceDetailPage() {
             {invoice.customer_name}
           </h1>
         </div>
-        <StatusBadge status={invoice.status} isOverdue={invoice.isOverdue} />
+        <div className="flex items-center gap-3">
+          <button
+            onClick={async () => {
+              const blob = await apiFetchBlob(`/invoices/${id}/pdf`);
+              downloadBlob(blob, `invoice-${invoice.invoice_number}.pdf`);
+            }}
+            className="text-sm font-medium text-indigo underline underline-offset-2"
+          >
+            Download PDF
+          </button>
+          <StatusBadge status={invoice.status} isOverdue={invoice.isOverdue} />
+        </div>
       </div>
 
       {actionError && (

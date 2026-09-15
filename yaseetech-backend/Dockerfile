@@ -16,6 +16,7 @@ RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY migrations ./migrations
 COPY scripts ./scripts
+COPY assets ./assets
 
 EXPOSE 3000
 CMD ["node", "dist/main.js"]

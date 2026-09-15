@@ -549,6 +549,70 @@ describe('Tenant isolation (e2e)', () => {
       .expect(404);
   });
 
+  it('change password: rejects a wrong current password, succeeds with the right one, and logs out other sessions', async () => {
+    const server = app.getHttpServer();
+    const email = uniqueEmail('change-pw');
+    const originalPassword = 'correct-horse-battery-staple';
+    const newPassword = 'a-different-strong-password';
+
+    const registerRes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'Change Password Test Shop',
+        ownerFullName: 'Password Owner',
+        email,
+        password: originalPassword,
+      })
+      .expect(201);
+
+    // Simulate a second device/session: log in again, separately from the
+    // session created by registration.
+    const secondSessionRes = await request(server)
+      .post('/api/v1/auth/login')
+      .send({ email, password: originalPassword })
+      .expect(200);
+
+    // Wrong current password must be rejected, and must not touch anything.
+    await request(server)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${registerRes.body.accessToken}`)
+      .send({ currentPassword: 'totally-wrong-password', newPassword })
+      .expect(401);
+
+    // Correct current password succeeds and returns a fresh token pair for
+    // THIS session.
+    const changeRes = await request(server)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${registerRes.body.accessToken}`)
+      .send({ currentPassword: originalPassword, newPassword })
+      .expect(200);
+    expect(changeRes.body.accessToken).toBeDefined();
+    expect(changeRes.body.refreshToken).toBeDefined();
+
+    // The security-critical behavior: the SECOND session's refresh token
+    // must now be dead -- a password change should log out other devices.
+    await request(server)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: secondSessionRes.body.refreshToken })
+      .expect(401);
+
+    // The session that MADE the change keeps working with its new tokens.
+    await request(server)
+      .get('/api/v1/users/me')
+      .set('Authorization', `Bearer ${changeRes.body.accessToken}`)
+      .expect(200);
+
+    // The old password no longer works; the new one does.
+    await request(server)
+      .post('/api/v1/auth/login')
+      .send({ email, password: originalPassword })
+      .expect(401);
+    await request(server)
+      .post('/api/v1/auth/login')
+      .send({ email, password: newPassword })
+      .expect(200);
+  });
+
   it('bulk CSV import: preview validates without writing, commit imports only valid rows, duplicate detection is tenant-scoped', async () => {
     const server = app.getHttpServer();
     const uniqueSku = `CSV-${Date.now()}`;
@@ -630,5 +694,108 @@ describe('Tenant isolation (e2e)', () => {
       .expect(201);
     expect(otherPreview.body.validCount).toBe(1);
     expect(otherPreview.body.duplicateSkusInDb).toHaveLength(0);
+  });
+
+  it('changing your password requires the current one, revokes other sessions, and keeps the current session working', async () => {
+    const server = app.getHttpServer();
+    const email = uniqueEmail('change-pw');
+    const originalPassword = 'correct-horse-battery-staple';
+
+    const registerRes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'Password Change Test Shop',
+        ownerFullName: 'PW Owner',
+        email,
+        password: originalPassword,
+      })
+      .expect(201);
+
+    // A second "device": log in again, separate refresh token.
+    const secondSessionLogin = await request(server)
+      .post('/api/v1/auth/login')
+      .send({ email, password: originalPassword })
+      .expect(200);
+
+    // Wrong current password is rejected, nothing changes.
+    await request(server)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${registerRes.body.accessToken}`)
+      .send({ currentPassword: 'wrong-password', newPassword: 'a-brand-new-password-123' })
+      .expect(401);
+
+    // Correct current password succeeds and returns a fresh token pair.
+    const changeRes = await request(server)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${registerRes.body.accessToken}`)
+      .send({ currentPassword: originalPassword, newPassword: 'a-brand-new-password-123' })
+      .expect(200);
+    expect(changeRes.body.accessToken).toBeDefined();
+    expect(changeRes.body.refreshToken).toBeDefined();
+
+    // The old password no longer works.
+    await request(server)
+      .post('/api/v1/auth/login')
+      .send({ email, password: originalPassword })
+      .expect(401);
+
+    // The new password works.
+    await request(server)
+      .post('/api/v1/auth/login')
+      .send({ email, password: 'a-brand-new-password-123' })
+      .expect(200);
+
+    // The SECOND session's refresh token was revoked by the password
+    // change -- this is the actual security property being tested, not
+    // just "login still works somewhere."
+    await request(server)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: secondSessionLogin.body.refreshToken })
+      .expect(401);
+  });
+
+  it('updating your own profile only touches your own row, and email cannot be changed through this endpoint', async () => {
+    const server = app.getHttpServer();
+
+    const tenantARes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'Profile Update Shop A',
+        ownerFullName: 'Original Name A',
+        email: uniqueEmail('profile-a'),
+        password: 'correct-horse-battery-staple',
+      })
+      .expect(201);
+    const tenantBRes = await request(server)
+      .post('/api/v1/auth/register')
+      .send({
+        businessName: 'Profile Update Shop B',
+        ownerFullName: 'Original Name B',
+        email: uniqueEmail('profile-b'),
+        password: 'correct-horse-battery-staple',
+      })
+      .expect(201);
+
+    const updated = await request(server)
+      .patch('/api/v1/users/me')
+      .set('Authorization', `Bearer ${tenantARes.body.accessToken}`)
+      // @ts-expect-error -- deliberately sending a field not on the DTO to prove it's rejected, not silently ignored
+      .send({ fullName: 'Updated Name A', phone: '08011112222', email: 'hijacked@example.com' })
+      .expect(400); // forbidNonWhitelisted rejects the unknown `email` field outright
+
+    const updatedProperly = await request(server)
+      .patch('/api/v1/users/me')
+      .set('Authorization', `Bearer ${tenantARes.body.accessToken}`)
+      .send({ fullName: 'Updated Name A', phone: '08011112222' })
+      .expect(200);
+    expect(updatedProperly.body.full_name).toBe('Updated Name A');
+    expect(updatedProperly.body.phone).toBe('08011112222');
+
+    // Tenant B's own profile is completely untouched.
+    const tenantBProfile = await request(server)
+      .get('/api/v1/users/me')
+      .set('Authorization', `Bearer ${tenantBRes.body.accessToken}`)
+      .expect(200);
+    expect(tenantBProfile.body.full_name).toBe('Original Name B');
   });
 });

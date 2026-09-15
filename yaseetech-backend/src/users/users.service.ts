@@ -5,6 +5,7 @@ import { AppException } from '../common/exceptions/app.exception';
 import { RequestUser } from '../common/guards/request-user.interface';
 import { CreateTeamMemberDto } from './dto/create-team-member.dto';
 import { UpdateTeamMemberDto } from './dto/update-team-member.dto';
+import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
 
 const BCRYPT_COST = 12;
 
@@ -50,6 +51,29 @@ export class UsersService {
           ...userResult.rows[0],
           roles: rolesResult.rows,
         };
+      },
+    );
+  }
+
+  /**
+   * Updates the caller's own name/phone. Uses COALESCE so a field left out
+   * of the request body keeps its current value rather than being wiped
+   * to NULL -- this is a partial-update PATCH, not a full replace.
+   */
+  async updateOwnProfile(requestUser: RequestUser, dto: UpdateOwnProfileDto) {
+    return this.db.withTenantContext(
+      { tenantId: requestUser.tenantId, userId: requestUser.userId, actorType: 'user' },
+      async (client) => {
+        const result = await client.query(
+          `UPDATE users
+           SET full_name = COALESCE($1, full_name),
+               phone = COALESCE($2, phone),
+               updated_at = now()
+           WHERE id = $3
+           RETURNING id, email, phone, full_name, status, created_at`,
+          [dto.fullName ?? null, dto.phone ?? null, requestUser.userId],
+        );
+        return result.rows[0];
       },
     );
   }

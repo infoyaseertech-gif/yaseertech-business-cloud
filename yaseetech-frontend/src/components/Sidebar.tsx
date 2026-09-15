@@ -45,12 +45,23 @@ export function Sidebar() {
       <div className="px-6 py-5 border-t border-white/10">
         <p className="text-sm font-medium truncate">{user?.full_name}</p>
         <p className="text-xs text-paper/50 truncate">{user?.email}</p>
-        <button
-          onClick={() => logout()}
-          className="mt-3 text-sm text-gold-100 hover:text-gold underline underline-offset-2"
-        >
-          Log out
-        </button>
+        <div className="mt-3 flex items-center gap-3">
+          <Link
+            href="/dashboard/settings"
+            className={`text-sm underline underline-offset-2 ${
+              pathname === '/dashboard/settings' ? 'text-gold' : 'text-paper/70 hover:text-paper'
+            }`}
+          >
+            Settings
+          </Link>
+          <span className="text-paper/30">&middot;</span>
+          <button
+            onClick={() => logout()}
+            className="text-sm text-gold-100 hover:text-gold underline underline-offset-2"
+          >
+            Log out
+          </button>
+        </div>
       </div>
     </aside>
   );

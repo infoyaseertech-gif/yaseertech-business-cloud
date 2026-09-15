@@ -69,12 +69,16 @@ Open **http://localhost:3001**. You should land on `/login`.
 5. Go to **Inventory**, add a product with a real cost/selling price.
    Go to **Point of Sale**, click the product to add it to the cart,
    pick a payment method, and charge — you should land on a real receipt
-   screen showing the transaction number the backend generated. Go back
-   to **Inventory** and confirm stock dropped by the quantity sold.
+   screen showing the transaction number the backend generated. Click
+   **Download PDF** to save the receipt — it's generated server-side by
+   `GET /pos/sales/:id/receipt.pdf` and downloads as a real PDF file. Go
+   back to **Inventory** and confirm stock dropped by the quantity sold.
 6. Go to **Invoices**, click **+ New invoice**, add a customer by name
    inline, add a line item, and save as a draft. Open it, click
    **Send invoice**, then record a payment — the status badge should move
-   from Draft → Sent → Paid.
+   from Draft → Sent → Paid. Click **Download PDF** on the invoice detail
+   page at any point — it hits `GET /invoices/:id/pdf` and downloads an
+   A4 invoice PDF reflecting whatever status/payments exist at that moment.
 7. Go to **Accounting**, check the **Profit & Loss** tab shows the sale
    and invoice revenue you just created, and the **Balance Sheet** tab
    does NOT show the red "doesn't balance" warning — if it ever does,
@@ -99,6 +103,14 @@ Open **http://localhost:3001**. You should land on `/login`.
     preview shows the right ready/skipped counts *before* you click
     Import, and that the product list only updates after you actually
     confirm.
+12. Click **Settings** (next to your name in the sidebar footer). Update
+    your name, confirm it saves and the sidebar updates too. Then open a
+    **second browser tab logged in as the same account** (or just note
+    you're logged in), change your password in the first tab, and confirm
+    you're still logged in there — then try using the app in the second
+    tab/session; it should be logged out. That's the real proof the
+    "other sessions get revoked" behavior works, not just that the
+    password itself changed.
 
 **Before step 6 will work, make sure the backend has run migration 016**
 (`016_accountant_permissions_and_ar_backfill.sql`) — it's what backfills
@@ -138,7 +150,9 @@ Mono** (amounts, emails, dates — anything tabular/data-like).
   choose a payment method, charge. Calls `POST /pos/sales` with a real
   client-generated idempotency key, shows a real receipt from the response
   (not a client-side calculation), and surfaces the backend's negative-stock
-  warning if a sale pushes inventory below zero.
+  warning if a sale pushes inventory below zero. The receipt screen has a
+  **Download PDF** button that fetches `GET /pos/sales/:id/receipt.pdf`
+  (a real server-generated PDF, via `apiFetchBlob`) and saves it locally.
 - `/dashboard/inventory` — add products, view stock on hand per branch,
   with a low-stock indicator driven by the product's real `reorder_level`.
   Also has a real **bulk CSV import**: choose a file, it's checked against
@@ -152,7 +166,9 @@ Mono** (amounts, emails, dates — anything tabular/data-like).
   pick an existing one, add line items), and `/dashboard/invoices/[id]` to
   send a draft (posting the real accrual journal entry) and record
   payments against it, with status badges reflecting the backend's actual
-  computed state, including derived "Overdue"
+  computed state, including derived "Overdue". The invoice detail page
+  has a **Download PDF** button next to the status badge, fetching
+  `GET /invoices/:id/pdf` for a real A4 invoice PDF.
 - `/dashboard/accounting` — Profit & Loss, Balance Sheet, Cash Flow, and
   the raw Journal, all real reports read from the same journal entries POS
   and Invoicing have been posting. The Balance Sheet visibly flags if
@@ -173,9 +189,23 @@ Mono** (amounts, emails, dates — anything tabular/data-like).
   needs `branches.manage_all` (Business Owner only); a Branch Manager
   hitting the form gets a real 403 from the backend, not a client-side
   guess at what they're allowed to do.
+- `/dashboard/settings` — edit your own name/phone (email is intentionally
+  not editable here), and change your password. The password form
+  correctly handles what the backend actually does on a successful
+  change: the response includes a fresh token pair, which gets stored
+  immediately so this session keeps working — a naive implementation that
+  just showed "success" without updating stored tokens would leave you
+  logged in on a soon-to-be-stale access token. Linked from the sidebar
+  footer next to your name, not the main nav — it's account-level, not a
+  business module.
 - Automatic access-token refresh on expiry, using the backend's rotating
   refresh tokens, with request queuing so two simultaneous 401s don't race
   each other into a double-refresh
+- `lib/api.ts`'s auth/refresh logic (attach token, retry once on expiry,
+  clear session on anything refresh can't fix) is factored into a shared
+  `authenticatedFetch()`, used by both `apiFetch<T>()` (JSON responses) and
+  `apiFetchBlob()` (binary responses — used for the receipt/invoice PDF
+  downloads above) so the two don't duplicate that logic.
 - The sidebar has no "coming soon" section anymore — every core v1
   module (POS, Inventory, Invoices, Accounting, Branches, Team) is real
 

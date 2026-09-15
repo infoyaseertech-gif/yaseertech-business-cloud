@@ -1,7 +1,11 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto, LogoutDto, RefreshTokenDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequestUser } from '../common/guards/request-user.interface';
 
 @Controller('auth')
 export class AuthController {
@@ -29,5 +33,15 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(@Body() dto: LogoutDto): Promise<void> {
     await this.authService.logout(dto.refreshToken);
+  }
+
+  // No @RequirePermissions -- every authenticated role can change their
+  // own password. There's nothing to authorize beyond "you know your
+  // current password," which the service itself checks.
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  changePassword(@CurrentUser() user: RequestUser, @Body() dto: ChangePasswordDto) {
+    return this.authService.changePassword(user, dto);
   }
 }

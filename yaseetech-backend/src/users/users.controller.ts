@@ -7,6 +7,7 @@ import { RequestUser } from '../common/guards/request-user.interface';
 import { UsersService } from './users.service';
 import { CreateTeamMemberDto } from './dto/create-team-member.dto';
 import { UpdateTeamMemberDto } from './dto/update-team-member.dto';
+import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -21,6 +22,16 @@ export class UsersController {
   @Get('me')
   me(@CurrentUser() user: RequestUser) {
     return this.usersService.getProfile(user);
+  }
+
+  // Edits the caller's own name/phone -- no permission needed beyond
+  // being authenticated, since you're only ever touching your own row.
+  // Declared BEFORE the PATCH(':id') route below: Nest/Express match
+  // routes in declaration order, and ':id' would otherwise treat the
+  // literal path "me" as if it were a target user's id.
+  @Patch('me')
+  updateOwnProfile(@CurrentUser() user: RequestUser, @Body() dto: UpdateOwnProfileDto) {
+    return this.usersService.updateOwnProfile(user, dto);
   }
 
   // The concrete proof that RBAC works: PermissionsGuard runs after
