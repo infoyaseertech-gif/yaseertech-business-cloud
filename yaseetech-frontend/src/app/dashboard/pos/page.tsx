@@ -1,11 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiFetch, apiFetchBlob } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 import { ApiError, Branch, CartItem, Product, SaleResult } from '@/lib/types';
 import { Button } from '@/components/Button';
 import { ErrorBanner } from '@/components/ErrorBanner';
-import { downloadBlob } from '@/lib/download-blob';
 
 function generateUuid(): string {
   // Real browsers all support crypto.randomUUID(); this matches exactly
@@ -266,17 +265,8 @@ function Receipt({ sale, onNewSale }: { sale: SaleResult; onNewSale: () => void 
           </div>
         )}
 
-        <div className="mt-6 flex gap-2">
+        <div className="mt-6">
           <Button onClick={onNewSale}>New sale</Button>
-          <button
-            onClick={async () => {
-              const blob = await apiFetchBlob(`/pos/sales/${sale.id}/receipt.pdf`);
-              downloadBlob(blob, `receipt-${sale.transaction_number}.pdf`);
-            }}
-            className="rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-ink hover:bg-paper"
-          >
-            Download PDF
-          </button>
         </div>
       </div>
     </div>

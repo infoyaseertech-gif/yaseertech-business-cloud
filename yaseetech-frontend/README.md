@@ -69,16 +69,12 @@ Open **http://localhost:3001**. You should land on `/login`.
 5. Go to **Inventory**, add a product with a real cost/selling price.
    Go to **Point of Sale**, click the product to add it to the cart,
    pick a payment method, and charge — you should land on a real receipt
-   screen showing the transaction number the backend generated. Click
-   **Download PDF** to save the receipt — it's generated server-side by
-   `GET /pos/sales/:id/receipt.pdf` and downloads as a real PDF file. Go
-   back to **Inventory** and confirm stock dropped by the quantity sold.
+   screen showing the transaction number the backend generated. Go back
+   to **Inventory** and confirm stock dropped by the quantity sold.
 6. Go to **Invoices**, click **+ New invoice**, add a customer by name
    inline, add a line item, and save as a draft. Open it, click
    **Send invoice**, then record a payment — the status badge should move
-   from Draft → Sent → Paid. Click **Download PDF** on the invoice detail
-   page at any point — it hits `GET /invoices/:id/pdf` and downloads an
-   A4 invoice PDF reflecting whatever status/payments exist at that moment.
+   from Draft → Sent → Paid.
 7. Go to **Accounting**, check the **Profit & Loss** tab shows the sale
    and invoice revenue you just created, and the **Balance Sheet** tab
    does NOT show the red "doesn't balance" warning — if it ever does,
@@ -150,9 +146,7 @@ Mono** (amounts, emails, dates — anything tabular/data-like).
   choose a payment method, charge. Calls `POST /pos/sales` with a real
   client-generated idempotency key, shows a real receipt from the response
   (not a client-side calculation), and surfaces the backend's negative-stock
-  warning if a sale pushes inventory below zero. The receipt screen has a
-  **Download PDF** button that fetches `GET /pos/sales/:id/receipt.pdf`
-  (a real server-generated PDF, via `apiFetchBlob`) and saves it locally.
+  warning if a sale pushes inventory below zero.
 - `/dashboard/inventory` — add products, view stock on hand per branch,
   with a low-stock indicator driven by the product's real `reorder_level`.
   Also has a real **bulk CSV import**: choose a file, it's checked against
@@ -166,9 +160,7 @@ Mono** (amounts, emails, dates — anything tabular/data-like).
   pick an existing one, add line items), and `/dashboard/invoices/[id]` to
   send a draft (posting the real accrual journal entry) and record
   payments against it, with status badges reflecting the backend's actual
-  computed state, including derived "Overdue". The invoice detail page
-  has a **Download PDF** button next to the status badge, fetching
-  `GET /invoices/:id/pdf` for a real A4 invoice PDF.
+  computed state, including derived "Overdue"
 - `/dashboard/accounting` — Profit & Loss, Balance Sheet, Cash Flow, and
   the raw Journal, all real reports read from the same journal entries POS
   and Invoicing have been posting. The Balance Sheet visibly flags if
@@ -201,11 +193,6 @@ Mono** (amounts, emails, dates — anything tabular/data-like).
 - Automatic access-token refresh on expiry, using the backend's rotating
   refresh tokens, with request queuing so two simultaneous 401s don't race
   each other into a double-refresh
-- `lib/api.ts`'s auth/refresh logic (attach token, retry once on expiry,
-  clear session on anything refresh can't fix) is factored into a shared
-  `authenticatedFetch()`, used by both `apiFetch<T>()` (JSON responses) and
-  `apiFetchBlob()` (binary responses — used for the receipt/invoice PDF
-  downloads above) so the two don't duplicate that logic.
 - The sidebar has no "coming soon" section anymore — every core v1
   module (POS, Inventory, Invoices, Accounting, Branches, Team) is real
 

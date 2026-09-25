@@ -188,35 +188,6 @@ export class InvoicesService {
     );
   }
 
-  async getInvoiceForPdf(user: RequestUser, invoiceId: string) {
-    return this.db.withTenantContext(
-      { tenantId: user.tenantId, userId: user.userId },
-      async (client) => {
-        const result = await client.query(
-          `SELECT i.invoice_number, i.status, i.issue_date, i.due_date,
-                  i.subtotal_ngn, i.tax_ngn, i.total_ngn, i.amount_paid_ngn,
-                  b.name AS branch_name,
-                  biz.legal_name AS business_name, biz.address AS business_address,
-                  c.full_name AS customer_name, c.address AS customer_address
-           FROM invoices i
-           JOIN branches b ON b.id = i.branch_id
-           JOIN businesses biz ON biz.id = b.business_id
-           JOIN customers c ON c.id = i.customer_id
-           WHERE i.id = $1`,
-          [invoiceId],
-        );
-        if (result.rows.length === 0) {
-          throw new AppException('INVOICE_NOT_FOUND', 'Invoice not found.', HttpStatus.NOT_FOUND);
-        }
-        const itemsResult = await client.query(
-          `SELECT description, quantity, unit_price_ngn, line_total_ngn FROM invoice_items WHERE invoice_id = $1`,
-          [invoiceId],
-        );
-        return { ...result.rows[0], items: itemsResult.rows };
-      },
-    );
-  }
-
   private async getInvoiceDetail(client: PoolClient, invoiceId: string) {
     const invoiceResult = await client.query(
       `SELECT i.id, i.invoice_number, i.status, i.issue_date, i.due_date,

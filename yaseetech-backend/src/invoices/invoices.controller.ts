@@ -5,7 +5,6 @@ import {
   Param,
   Post,
   Query,
-  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -16,7 +15,6 @@ import { RequestUser } from '../common/guards/request-user.interface';
 import { InvoicesService } from './invoices.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { RecordInvoicePaymentDto } from './dto/record-payment.dto';
-import { buildInvoicePdf } from '../common/pdf/invoice-pdf.builder';
 
 @Controller('invoices')
 @UseGuards(JwtAuthGuard)
@@ -35,36 +33,6 @@ export class InvoicesController {
   @RequirePermissions('invoicing.manage')
   getOne(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.invoicesService.getOne(user, id);
-  }
-
-  @Get(':id/pdf')
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions('invoicing.manage')
-  async getInvoicePdf(@CurrentUser() user: RequestUser, @Param('id') id: string): Promise<StreamableFile> {
-    const invoice = await this.invoicesService.getInvoiceForPdf(user, id);
-    const bytes = await buildInvoicePdf({
-      businessName: invoice.business_name,
-      businessAddress: invoice.business_address,
-      branchName: invoice.branch_name,
-      invoiceNumber: invoice.invoice_number,
-      status: invoice.status,
-      issueDate: invoice.issue_date,
-      dueDate: invoice.due_date,
-      customerName: invoice.customer_name,
-      customerAddress: invoice.customer_address,
-      items: invoice.items.map((i: any) => ({
-        description: i.description, quantity: Number(i.quantity),
-        unitPriceNgn: Number(i.unit_price_ngn), lineTotalNgn: Number(i.line_total_ngn),
-      })),
-      subtotalNgn: Number(invoice.subtotal_ngn),
-      taxNgn: Number(invoice.tax_ngn),
-      totalNgn: Number(invoice.total_ngn),
-      amountPaidNgn: Number(invoice.amount_paid_ngn),
-    });
-    return new StreamableFile(bytes, {
-      type: 'application/pdf',
-      disposition: `attachment; filename="invoice-${invoice.invoice_number}.pdf"`,
-    });
   }
 
   @Post()

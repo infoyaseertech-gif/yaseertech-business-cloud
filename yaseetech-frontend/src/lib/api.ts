@@ -42,14 +42,7 @@ interface ApiFetchOptions extends RequestInit {
   skipAuth?: boolean;
 }
 
-/**
- * Shared core for every authenticated request: attaches the access token,
- * retries once through a single in-flight refresh on an expired token, and
- * clears session state on anything refresh can't fix. Returns the raw
- * Response so callers can parse it as JSON (apiFetch) or binary
- * (apiFetchBlob) without duplicating the auth/refresh dance in both.
- */
-async function authenticatedFetch(path: string, options: ApiFetchOptions = {}): Promise<Response> {
+export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { skipAuth, headers, ...rest } = options;
   const tokens = getStoredTokens();
 
@@ -57,7 +50,7 @@ async function authenticatedFetch(path: string, options: ApiFetchOptions = {}): 
     fetch(`${API_URL}${path}`, {
       ...rest,
       headers: {
-        ...(rest.body ? { 'Content-Type': 'application/json' } : {}),
+        'Content-Type': 'application/json',
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         ...headers,
       },
@@ -84,12 +77,6 @@ async function authenticatedFetch(path: string, options: ApiFetchOptions = {}): 
     }
   }
 
-  return response;
-}
-
-export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
-  const response = await authenticatedFetch(path, options);
-
   if (!response.ok) {
     const body = (await response.json().catch(() => ({
       error: { code: 'UNKNOWN_ERROR', message: 'Something went wrong.' },
@@ -99,22 +86,4 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
 
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
-}
-
-/**
- * Same auth/refresh handling as apiFetch, but returns a Blob instead of
- * parsing JSON -- for binary responses like generated receipt/invoice
- * PDFs, where the server sends application/pdf rather than JSON.
- */
-export async function apiFetchBlob(path: string, options: ApiFetchOptions = {}): Promise<Blob> {
-  const response = await authenticatedFetch(path, options);
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({
-      error: { code: 'UNKNOWN_ERROR', message: 'Something went wrong.' },
-    }))) as ApiErrorBody;
-    throw new ApiError(response.status, body);
-  }
-
-  return response.blob();
 }

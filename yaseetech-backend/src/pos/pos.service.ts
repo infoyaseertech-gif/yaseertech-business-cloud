@@ -185,40 +185,6 @@ export class PosService {
     );
   }
 
-  async getSaleForReceipt(user: RequestUser, saleId: string) {
-    return this.db.withTenantContext(
-      { tenantId: user.tenantId, userId: user.userId },
-      async (client) => {
-        const saleResult = await client.query(
-          `SELECT st.id, st.transaction_number, st.occurred_at,
-                  st.subtotal_ngn, st.tax_ngn, st.total_ngn,
-                  b.name AS branch_name, u.full_name AS cashier_name,
-                  biz.legal_name AS business_name
-           FROM sales_transactions st
-           JOIN branches b ON b.id = st.branch_id
-           JOIN users u ON u.id = st.cashier_user_id
-           JOIN businesses biz ON biz.id = b.business_id
-           WHERE st.id = $1`,
-          [saleId],
-        );
-        if (saleResult.rows.length === 0) {
-          throw new AppException('SALE_NOT_FOUND', 'Sale not found.', HttpStatus.NOT_FOUND);
-        }
-        const itemsResult = await client.query(
-          `SELECT p.name, ti.quantity, ti.unit_price_ngn, ti.line_total_ngn
-           FROM sales_transaction_items ti JOIN products p ON p.id = ti.product_id
-           WHERE ti.sales_transaction_id = $1`,
-          [saleId],
-        );
-        const paymentsResult = await client.query(
-          `SELECT method, amount_ngn FROM sales_payments WHERE sales_transaction_id = $1`,
-          [saleId],
-        );
-        return { ...saleResult.rows[0], items: itemsResult.rows, payments: paymentsResult.rows };
-      },
-    );
-  }
-
   private async getSaleDetail(client: PoolClient, saleId: string) {
     const saleResult = await client.query(
       `SELECT id, transaction_number, branch_id, customer_id, subtotal_ngn,

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Create Your Account — YaseeTech Business Cloud</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      colors: {
+        forest: { 900:'#0A2A1E', 800:'#0E3826', 700:'#12432E', 600:'#175339' },
+        leaf:'#2FAE66', gold:{ DEFAULT:'#EFA234', 700:'#C67A17' },
+        cream:'#F7F8F4', ink:'#122019', soft:'#5C6B62',
+      },
+      fontFamily: { display:['Poppins','sans-serif'], sans:['Inter','sans-serif'] },
+    }},
+  };
+</script>
+<style>
+  body{background:#F7F8F4;color:#122019;}
+  .card-shadow{box-shadow:0 20px 45px -18px rgba(10,42,30,.25);}
+  .field:focus{outline:none;border-color:#175339;box-shadow:0 0 0 3px rgba(23,83,57,.12);}
+  :focus-visible{outline:2px solid #EFA234;outline-offset:2px;}
+</style>
+</head>
+<body class="font-sans min-h-screen flex items-center justify-center p-4 sm:p-8">
+
+<div class="w-full max-w-4xl bg-white rounded-[28px] card-shadow border border-forest-900/5 grid lg:grid-cols-2 overflow-hidden">
+
+  <!-- brand panel -->
+  <div class="hidden lg:flex flex-col justify-between bg-forest-800 text-white p-10 relative overflow-hidden">
+    <div class="absolute -left-16 -top-16 w-64 h-64 rounded-full bg-gold/10 blur-3xl"></div>
+    <a href="index.html" class="relative flex items-center gap-2.5">
+      <svg width="30" height="30" viewBox="0 0 34 34" fill="none"><path d="M17 2 4 7v9c0 8 5.5 13.4 13 16 7.5-2.6 13-8 13-16V7L17 2Z" fill="#EFA234"/></svg>
+      <span class="font-display font-bold">YaseeTech Business Cloud</span>
+    </a>
+    <div class="relative">
+      <p class="font-display font-bold text-2xl leading-snug">Set up your business in minutes. No card required.</p>
+      <ul class="mt-8 space-y-4">
+        <li class="flex items-start gap-3">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" class="shrink-0 mt-0.5"><path d="M2 12a10 10 0 1 1 20 0 10 10 0 0 1-20 0Z" stroke="#EFA234" stroke-width="1.8"/><path d="M8 12l2.5 2.5L16 9" stroke="#EFA234" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="text-sm text-white/80">14-day free trial, every plan</span>
+        </li>
+        <li class="flex items-start gap-3">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" class="shrink-0 mt-0.5"><path d="M2 12a10 10 0 1 1 20 0 10 10 0 0 1-20 0Z" stroke="#EFA234" stroke-width="1.8"/><path d="M8 12l2.5 2.5L16 9" stroke="#EFA234" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="text-sm text-white/80">Works offline at the till</span>
+        </li>
+        <li class="flex items-start gap-3">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" class="shrink-0 mt-0.5"><path d="M2 12a10 10 0 1 1 20 0 10 10 0 0 1-20 0Z" stroke="#EFA234" stroke-width="1.8"/><path d="M8 12l2.5 2.5L16 9" stroke="#EFA234" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="text-sm text-white/80">Set up your first branch today</span>
+        </li>
+      </ul>
+    </div>
+    <p class="relative text-xs text-white/50">© 2026 YaseeTech Business Cloud. All rights reserved.</p>
+  </div>
+
+  <!-- form -->
+  <div class="p-8 sm:p-12 flex flex-col justify-center">
+    <a href="index.html" class="lg:hidden flex items-center gap-2 mb-8">
+      <svg width="26" height="26" viewBox="0 0 34 34" fill="none"><path d="M17 2 4 7v9c0 8 5.5 13.4 13 16 7.5-2.6 13-8 13-16V7L17 2Z" fill="#12432E"/></svg>
+      <span class="font-display font-bold text-forest-800">YaseeTech Business Cloud</span>
+    </a>
+    <h1 class="font-display font-bold text-2xl text-forest-900">Create your account</h1>
+    <p class="mt-1.5 text-sm text-soft">Start your 14-day free trial — no credit card required.</p>
+
+    <form class="mt-7 space-y-4" onsubmit="return false;">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-ink mb-1.5" for="fname">Full name</label>
+          <input id="fname" type="text" placeholder="Amina Yusuf" class="field w-full rounded-xl border border-forest-900/15 px-4 py-3 text-sm placeholder:text-soft/60 transition-shadow" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-ink mb-1.5" for="bname">Business name</label>
+          <input id="bname" type="text" placeholder="Amina Fashion House" class="field w-full rounded-xl border border-forest-900/15 px-4 py-3 text-sm placeholder:text-soft/60 transition-shadow" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-ink mb-1.5" for="email">Work email</label>
+        <input id="email" type="email" placeholder="you@business.com" class="field w-full rounded-xl border border-forest-900/15 px-4 py-3 text-sm placeholder:text-soft/60 transition-shadow" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-ink mb-1.5" for="phone">Phone number</label>
+        <div class="flex">
+          <span class="flex items-center px-3.5 rounded-l-xl border border-r-0 border-forest-900/15 bg-cream text-sm text-soft font-medium">+234</span>
+          <input id="phone" type="tel" placeholder="801 234 5678" class="field w-full rounded-r-xl border border-forest-900/15 px-4 py-3 text-sm placeholder:text-soft/60 transition-shadow" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-ink mb-1.5" for="password">Password</label>
+        <input id="password" type="password" placeholder="Minimum 8 characters" class="field w-full rounded-xl border border-forest-900/15 px-4 py-3 text-sm placeholder:text-soft/60 transition-shadow" />
+      </div>
+      <label class="flex items-start gap-2.5 text-xs text-soft">
+        <input type="checkbox" class="w-4 h-4 mt-0.5 rounded border-forest-900/25 text-forest-700 focus:ring-forest-700" />
+        I agree to the <a href="#" class="text-forest-700 font-semibold hover:underline">Terms of Service</a> and <a href="#" class="text-forest-700 font-semibold hover:underline">Privacy Policy</a>
+      </label>
+      <button class="w-full bg-gold hover:bg-gold-700 transition-colors text-forest-900 font-semibold rounded-xl py-3.5 text-sm">Create Free Account</button>
+    </form>
+
+    <p class="mt-7 text-center text-sm text-soft">Already have an account? <a href="login.html" class="font-semibold text-forest-700 hover:underline">Log in</a></p>
+  </div>
+</div>
+
+</body>
+</html>

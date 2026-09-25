@@ -33,14 +33,6 @@ npm install
 If this fails on a specific package, that's the first thing to report back
 — it's the one step this environment couldn't pre-verify.
 
-**Receipt/invoice PDFs** (`pos.controller`'s `/pos/sales/:id/receipt.pdf`
-and `invoices.controller`'s `/invoices/:id/pdf`) are generated with
-`pdf-lib` + `@pdf-lib/fontkit`, using the IBM Plex Mono/Serif `.ttf` files
-checked into `assets/fonts/` (with their SIL Open Font License in
-`assets/fonts/LICENSE.txt`). Nothing to download — pdf-lib's built-in
-standard fonts can't render the ₦ sign, so real fonts are embedded instead.
-The Dockerfile copies `assets/` into the runtime image alongside `dist/`.
-
 ## 2. Start Postgres
 
 ```bash
@@ -172,12 +164,6 @@ curl -X POST http://localhost:3000/api/v1/pos/sales \
 ```
 Then check stock dropped by 1: `curl -H "Authorization: Bearer <accessToken>" "http://localhost:3000/api/v1/inventory/stock?branchId=<branchId>"`
 
-**Download the receipt as a PDF** (use the sale `id` returned above -- ₦ renders correctly because the PDF embeds real IBM Plex fonts rather than relying on pdf-lib's standard fonts):
-```bash
-curl -H "Authorization: Bearer <accessToken>" \
-  "http://localhost:3000/api/v1/pos/sales/<saleId>/receipt.pdf" -o receipt.pdf
-```
-
 **Invoicing (Phase 4b):**
 ```bash
 # Add a customer
@@ -197,10 +183,6 @@ curl -X POST http://localhost:3000/api/v1/invoices/<invoiceId>/send -H "Authoriz
 curl -X POST http://localhost:3000/api/v1/invoices/<invoiceId>/payments \
   -H "Authorization: Bearer <accessToken>" -H "Content-Type: application/json" \
   -d '{"amountNgn": 50000, "method": "transfer"}'
-
-# Download the invoice as a PDF (A4, letterhead-style, with ₦ amounts)
-curl -H "Authorization: Bearer <accessToken>" \
-  "http://localhost:3000/api/v1/invoices/<invoiceId>/pdf" -o invoice.pdf
 ```
 
 **Accounting reports (Phase 6):**
@@ -328,9 +310,6 @@ until it passes again.
   and the auto-generated double-entry journal entry, all in one
   transaction. Idempotent on `client_transaction_uuid` — retrying the same
   sale is a safe no-op, which is what makes offline POS sync safe later.
-- `GET /pos/sales/:id/receipt.pdf` — the same sale rendered as a downloadable
-  thermal-receipt-width PDF (server-generated with `pdf-lib`, embedded IBM
-  Plex fonts so the ₦ sign renders correctly instead of a tofu box).
 - `GET /customers`, `POST /customers` — minimal CRM, just enough to attach
   a customer to an invoice.
 - `GET /invoices`, `GET /invoices/:id`, `POST /invoices`,
@@ -340,9 +319,6 @@ until it passes again.
   payment** posts the cash/AR relief entry (Dr Cash / Cr Accounts
   Receivable) and recomputes status from the real sum of payments, not a
   trusted running counter.
-- `GET /invoices/:id/pdf` — the invoice rendered as a downloadable A4 PDF
-  (letterhead, bill-to block, line items, totals, balance due) using the
-  same `pdf-lib` + embedded-fonts pipeline as the receipt PDF above.
 - `GET /branches`, `POST /branches` — list and create branches;
   creating one requires `branches.manage_all` (Business Owner only —
   `branches.manage_own`, held by Branch Manager, scopes someone to
